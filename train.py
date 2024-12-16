@@ -3,8 +3,8 @@ import torch.optim as optim
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
-from torchvision.models import vgg16
-from torchvision.transforms import ToTensor, Resize, Normalize
+from torchvision.models import vgg16, VGG16_Weights
+from torchvision.transforms import ToTensor, Resize, Normalize, RandomCrop
 from torch.utils.data import DataLoader
 import os
 import tqdm
@@ -17,7 +17,7 @@ from model import HalftoneNet
 class PerceptualLoss(nn.Module):
     def __init__(self):
         super(PerceptualLoss, self).__init__()
-        vgg = vgg16(pretrained=True).features[:16]  # 使用 VGG16 到 relu3_3
+        vgg = vgg16(weights=VGG16_Weights.DEFAULT).features[:16]  # 使用 VGG16 到 relu3_3
         self.vgg = vgg.eval()
         for param in self.vgg.parameters():
             param.requires_grad = False
@@ -187,10 +187,6 @@ def train(
 
 # 主函数
 if __name__ == "__main__":
-    from torchvision.transforms import ToTensor, Normalize, RandomCrop
-    from model import HalftoneNet
-    from data import HalftoneDataset
-    from torch.utils.data import DataLoader
 
     # 数据预处理
     transform = torchvision.transforms.Compose([
@@ -201,7 +197,7 @@ if __name__ == "__main__":
 
     # 数据集
     dataset = HalftoneDataset(
-        image_dir="/home/lancer/item/half-tone/dataset/VOC2012/val/raw",
+        image_dir="/home/lexer/item/half-tone/dataset/VOC2012/train/raw",
         transform=transform,
         max_images=10000
     )
@@ -209,6 +205,11 @@ if __name__ == "__main__":
 
     # 初始化模型
     model = HalftoneNet(in_channels=3, num_classes=256, num_features=64, block_size=3)
+
+    # 加载保存的模型权重
+    checkpoint_path = "./checkpoints/latest_model.pth"
+    checkpoint = torch.load(checkpoint_path, weights_only=False)
+    model.load_state_dict(checkpoint["model_state_dict"])
 
     # 开始训练
     train(

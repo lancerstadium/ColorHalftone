@@ -126,9 +126,10 @@ class LookupTable(nn.Module):
 
 # 重组模块
 class ReassembleModule(nn.Module):
-    def __init__(self, block_size=3):
+    def __init__(self, block_size=3, recue_ratio=0.8):
         super(ReassembleModule, self).__init__()
         self.block_size = block_size
+        self.recue_ratio = recue_ratio
 
     def split_into_blocks(self, x, block_size):
         """
@@ -146,7 +147,7 @@ class ReassembleModule(nn.Module):
         x = x.permute(0, 1, 2, 4, 3, 5)  # 调整维度: (B, C, H_blocks, W_blocks, block_size, block_size)
         return x
 
-    def forward(self, templates, quantized_colors, offsets):
+    def forward(self, x, templates, quantized_colors, offsets):
         """
         Args:
             x: 输入图像 (B, C, H, W)
@@ -156,7 +157,7 @@ class ReassembleModule(nn.Module):
         Returns:
             output: 重组后的大图 (B, C, H, W)
         """
-        # residual_blocks = self.split_into_blocks(x, self.block_size)
+        residual_blocks = self.split_into_blocks(x, self.block_size)
         B, C, H_blocks, W_blocks, block_size, _ = templates.size()
         H, W = H_blocks * block_size, W_blocks * block_size
 
@@ -171,7 +172,7 @@ class ReassembleModule(nn.Module):
         quantized_colors_expanded = quantized_colors.unsqueeze(-1).unsqueeze(-1).expand(
             B, C, H_blocks, W_blocks, block_size, block_size
         )
-        colored_templates = applied_templates * (quantized_colors_expanded)
+        colored_templates = applied_templates * ((1 - self.recue_ratio) * quantized_colors_expanded + self.recue_ratio * residual_blocks)
 
         # 重组为大图
         reconstructed_image = colored_templates.permute(0, 1, 2, 4, 3, 5).reshape(B, C, H, W)
@@ -197,7 +198,7 @@ class HalftoneNet(nn.Module):
         offsets, quantized_colors = self.offset_and_color_branch(features, x)
         class_indices = self.classification_branch(features)
         templates = self.lookup_table(class_indices)
-        output = self.reassemble(templates, quantized_colors, offsets)
+        output = self.reassemble(x, templates, quantized_colors, offsets)
         return output, class_indices, offsets
 
 

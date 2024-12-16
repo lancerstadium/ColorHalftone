@@ -1,7 +1,7 @@
 import torch
 import torchvision
 from torch.utils.data import DataLoader
-from torchvision.transforms import ToTensor, Resize, Normalize
+from torchvision.transforms import ToTensor, Resize, Normalize, RandomCrop
 import os
 import tqdm
 import numpy as np
@@ -11,16 +11,31 @@ from data import HalftoneDataset
 
 
 # 保存图片函数
-def save_image(tensor, file_path):
+def save_image(tensor, file_path, mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]):
     """
     将 Tensor 图像保存为文件。
     Args:
         tensor: 形状为 (C, H, W)，值范围 [0, 1]
         file_path: 保存路径
+        mean: 反标准化的均值
+        std: 反标准化的标准差
     """
-    image = tensor.clamp(0, 1)
+    device = tensor.device  # 获取 tensor 的设备
+
+    # 将 mean 和 std 移动到 tensor 所在的设备
+    mean = torch.tensor(mean).to(device).view(-1, 1, 1)
+    std = torch.tensor(std).to(device).view(-1, 1, 1)
+
+    # 反标准化
+    tensor = tensor * std + mean
+
+    # 将范围限制在 [0, 1] 之间
+    tensor = tensor.clamp(0, 1)
+
+    # 转换为 (H, W, C) 并保存
     image = torchvision.transforms.ToPILImage()(tensor)
     image.save(file_path)
+
 
 
 # 计算 PSNR
@@ -131,14 +146,14 @@ def evaluate(model, dataloader, save_dir="./results"):
 if __name__ == "__main__":
     # 数据预处理
     transform = torchvision.transforms.Compose([
-        Resize((48, 48)),  # 确保尺寸是 3 的倍数
+        RandomCrop(48),  # 确保尺寸是 3 的倍数
         ToTensor(),
         Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # 使用标准 ImageNet 均值和标准差
     ])
 
     # 加载测试集
     dataset = HalftoneDataset(
-        image_dir="/home/lancer/item/half-tone/dataset/VOC2012/val/raw",
+        image_dir="/home/lexer/item/half-tone/dataset/VOC2012/train/raw",
         transform=transform,
         max_images=10  # 控制评估最大图像数量
     )
@@ -149,7 +164,7 @@ if __name__ == "__main__":
 
     # 加载保存的模型权重
     checkpoint_path = "./checkpoints/latest_model.pth"
-    checkpoint = torch.load(checkpoint_path)
+    checkpoint = torch.load(checkpoint_path, weights_only=False)
     model.load_state_dict(checkpoint["model_state_dict"])
 
     # 开始评估
