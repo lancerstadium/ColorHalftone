@@ -35,28 +35,31 @@ class FeatureExtractor(nn.Module):
 
 # 偏移分支和颜色分支（加深结构并引入残差连接）
 class OffsetAndColorBranch(nn.Module):
-    def __init__(self, in_channels, hidden_channels=32,  block_size=3):
+    def __init__(self, in_channels, hidden_channels=32,  block_size=3, scale=4):
         super(OffsetAndColorBranch, self).__init__()
         self.block_size = block_size
+        self.scale = scale
         self.offset_predictor = nn.Sequential(
             nn.Conv2d(in_channels, hidden_channels, kernel_size=3, stride=1, padding=1),
             nn.ReLU(inplace=True),
-            nn.Conv2d(hidden_channels, 3, kernel_size=self.block_size, stride=self.block_size, padding=0)
+            nn.Conv2d(hidden_channels, 3 * scale * scale, kernel_size=self.block_size, stride=self.block_size, padding=0)
         )
         self.color_predictor = nn.Sequential(
             nn.Conv2d(in_channels, hidden_channels, kernel_size=3, stride=1, padding=1),
             nn.ReLU(inplace=True),
-            nn.Conv2d(hidden_channels, 3, kernel_size=self.block_size, stride=self.block_size, padding=0)
+            nn.Conv2d(hidden_channels, 3 * scale * scale, kernel_size=self.block_size, stride=self.block_size, padding=0)
         )
 
     def forward(self, x, residual):
         # 根据 block_size 动态计算池化后的尺寸
-        output_size = (x.size(2) // self.block_size, x.size(3) // self.block_size)
+        output_size  = (x.size(2) // self.block_size, x.size(3) // self.block_size)
         
         # 使用自适应池化，将图像池化为 output_size 大小
+        B, C, H, W = x.shape
         adpresidual = F.adaptive_avg_pool2d(residual, output_size)
-        offsets = torch.tanh(self.offset_predictor(x) + adpresidual)  # 偏移范围 [-1, 1]
-        quantized_colors = torch.sigmoid(self.color_predictor(x) + adpresidual)  # 颜色范围 [0, 1]
+        adpresidual = adpresidual.repeat((1,1,self.scale,self.scale)).view(B, 3, output_size[0] * self.scale, output_size[1] * self.scale)
+        offsets = torch.tanh(self.offset_predictor(x).view(B, 3, output_size[0] * self.scale, output_size[1] * self.scale) + adpresidual) # 偏移范围 [-1, 1]
+        quantized_colors = torch.sigmoid(self.color_predictor(x).view(B, 3, output_size[0] * self.scale, output_size[1] * self.scale) + adpresidual)  # 颜色范围 [0, 1]
         return offsets, quantized_colors
 
 
@@ -75,11 +78,12 @@ class DepthwiseSeparableConv(nn.Module):
 
 # 分类分支（加深网络并添加全卷积）
 class ClassificationBranch(nn.Module):
-    def __init__(self, in_channels, num_classes=64, block_size=3):
+    def __init__(self, in_channels, num_classes=64, block_size=3,scale=4):
         super(ClassificationBranch, self).__init__()
         self.num_classes = num_classes
         self.block_size = block_size
         self.in_channels = in_channels
+        self.scale = scale
 
         # 使用多个深度可分离卷积加深网络
         self.conv1 = DepthwiseSeparableConv(in_channels, in_channels * 2, kernel_size=3, stride=1, padding=1)
@@ -87,7 +91,7 @@ class ClassificationBranch(nn.Module):
         self.conv3 = DepthwiseSeparableConv(in_channels * 2, in_channels * num_classes, kernel_size=self.block_size, stride=self.block_size, padding=0)
 
         # 添加一个全卷积层
-        self.fc = nn.Conv2d(in_channels * num_classes, 3 * num_classes, kernel_size=1, stride=1)
+        self.fc = nn.Conv2d(in_channels * num_classes, 3 * num_classes * scale * scale, kernel_size=1, stride=1)
 
     def forward(self, x):
         B, C, H, W = x.shape
@@ -98,13 +102,13 @@ class ClassificationBranch(nn.Module):
         x = self.conv3(x)  # 输出: [B, 3 * num_classes, H/3, W/3]
 
         # 使用全卷积进行处理
-        x = self.fc(x)  # 输出: [B, 3 * num_classes, H/3, W/3]
+        x = self.fc(x)  # 输出: [B, 3 * num_classes * scale * scale, H/3, W/3]
 
         # 获取 H_new 和 W_new 是卷积后输出的高度和宽度
         _, _, H_new, W_new = x.shape
 
-        # 调整形状: [B, 3, num_classes, H/3, W/3]
-        x = x.view(B, 3, self.num_classes, H_new, W_new).permute(0, 1, 3, 4, 2).contiguous()
+        # 调整形状: [B, 3, num_classes, H/3 * scale, W/3 * scale]
+        x = x.view(B, 3, self.num_classes, H_new * self.scale, W_new * self.scale).permute(0, 1, 3, 4, 2).contiguous()
 
         # 获取分类索引: [B, 3, H/3, W/3]
         class_indices = torch.argmax(x, dim=-1)
@@ -113,9 +117,9 @@ class ClassificationBranch(nn.Module):
 
 # 查找表模块
 class LookupTable(nn.Module):
-    def __init__(self, num_classes=64, block_size=3):
+    def __init__(self, num_classes=64, block_size=3, scale=4):
         super(LookupTable, self).__init__()
-        self.templates = nn.Parameter(torch.randn(num_classes, block_size, block_size))  # 模板参数
+        self.templates = nn.Parameter(torch.randn(num_classes, block_size*scale, block_size*scale))  # 模板参数
 
     def forward(self, class_indices):
         """
@@ -178,6 +182,7 @@ class ReassembleModule(nn.Module):
         quantized_colors_expanded = quantized_colors.unsqueeze(-1).unsqueeze(-1).expand(
             B, C, H_blocks, W_blocks, block_size, block_size
         )
+        print(quantized_colors_expanded.size())
         colored_templates = (1 - applied_templates) * ((1 - self.recue_ratio) * quantized_colors_expanded + self.recue_ratio * residual_blocks)
 
         # 将colored_templates限制为0或1
@@ -194,13 +199,14 @@ class ReassembleModule(nn.Module):
 
 # 主模型
 class HalftoneNet(nn.Module):
-    def __init__(self, in_channels=3, num_classes=64, num_features=64, block_size=3):
+    def __init__(self, in_channels=3, num_classes=64, num_features=64, block_size=3, scale=4):
         super(HalftoneNet, self).__init__()
         self.block_size = block_size
+        self.scale = 4
         self.feature_extractor = FeatureExtractor(in_channels, num_features)
-        self.offset_and_color_branch = OffsetAndColorBranch(num_features, block_size=self.block_size)
-        self.classification_branch = ClassificationBranch(num_features, num_classes, self.block_size)
-        self.lookup_table = LookupTable(num_classes, self.block_size)
+        self.offset_and_color_branch = OffsetAndColorBranch(num_features, block_size=self.block_size,scale=self.scale)
+        self.classification_branch = ClassificationBranch(num_features, num_classes, block_size=self.block_size,scale=self.scale)
+        self.lookup_table = LookupTable(num_classes, self.block_size,scale=self.scale)
         self.reassemble = ReassembleModule(self.block_size)
 
     def forward(self, x):
@@ -215,8 +221,8 @@ class HalftoneNet(nn.Module):
 # 测试代码
 if __name__ == "__main__":
     input_image = torch.randn(8, 3, 50, 50)
-    model = HalftoneNet(in_channels=3, num_classes=256, num_features=64, block_size=5)
+    model = HalftoneNet(in_channels=3, num_classes=256, num_features=64, block_size=5, scale=4)
     output, class_indices, offsets = model(input_image)
-    print(f"Output shape: {output.shape}")  # 应为: [8, 3, 48, 48]
-    print(f"Class indices shape: {class_indices.shape}")  # 应为: [8, 3, 16, 16]
-    print(f"Offsets shape: {offsets.shape}")  # 应为: [8, 3, 16, 16]
+    print(f"Output shape: {output.shape}")  # 应为: [8, 3, 48*scale, 48*scale]
+    print(f"Class indices shape: {class_indices.shape}")  # 应为: [8, 3, 16*scale, 16*scale]
+    print(f"Offsets shape: {offsets.shape}")  # 应为: [8, 3, 16*scale, 16*scale]
