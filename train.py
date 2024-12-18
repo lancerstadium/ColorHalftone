@@ -3,7 +3,8 @@ import torch.optim as optim
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
-from torchvision.models import vgg16, VGG16_Weights
+# from torchvision.models import vgg16, VGG16_Weights
+from torchvision.models import vgg16
 from torchvision.transforms import ToTensor, Resize, Normalize, RandomCrop
 from torch.utils.data import DataLoader
 import os
@@ -17,7 +18,8 @@ from model import HalftoneNet
 class PerceptualLoss(nn.Module):
     def __init__(self):
         super(PerceptualLoss, self).__init__()
-        vgg = vgg16(weights=VGG16_Weights.DEFAULT).features[:16]  # 使用 VGG16 到 relu3_3
+        vgg = vgg16(pretrained=True).features[:16]  # 使用 VGG16 到 relu3_3
+        # vgg = vgg16(weights=VGG16_Weights.DEFAULT).features[:16]  # 使用 VGG16 到 relu3_3
         self.vgg = vgg.eval()
         for param in self.vgg.parameters():
             param.requires_grad = False
@@ -44,7 +46,7 @@ def sparsity_loss(templates, sparsity_threshold=0.5):
     return loss
 
 
-def gaussian_blur(x, kernel_size=7, sigma=1.0):
+def gaussian_blur(x, kernel_size=11, sigma=1.0):
     """
     对图像应用高斯模糊
     Args:
@@ -64,7 +66,7 @@ def gaussian_blur(x, kernel_size=7, sigma=1.0):
     blurred_image = F.conv2d(x, kernel, padding=kernel_size//2, groups=x.size(1))
     return blurred_image
 
-def create_gaussian_kernel(kernel_size=7, sigma=1.0):
+def create_gaussian_kernel(kernel_size=11, sigma=1.0):
     """
     创建高斯核
     """
@@ -125,7 +127,7 @@ def train(
     num_epochs=50,
     lr=1e-4,
     lambda1=2.0,
-    lambda2=0.01,
+    lambda2=0.02,
     lambda3=0.8,
     lambda4=0.5,
     sparsity_threshold=0.2,
@@ -166,7 +168,7 @@ def train(
                 recon_loss = F.mse_loss(output, batch) + perceptual_loss(output, batch)
 
                 # 2. 稀疏性损失
-                sparse_loss = sparsity_loss(model.lookup_table.templates, sparsity_threshold)
+                sparse_loss = sparsity_loss(model.lookup_table.templates, sparsity_threshold) + sparsity_loss(output, 1 - sparsity_threshold)
 
                 # 3. 颜色正则化损失
                 color_loss = color_regularization_loss(output, batch)
@@ -220,26 +222,27 @@ if __name__ == "__main__":
 
     # 数据预处理
     transform = torchvision.transforms.Compose([
-        RandomCrop(48),  # 随机裁剪为 48x48
+        RandomCrop(50),  # 随机裁剪为 48x48
         ToTensor(),  # 转换为Tensor
         Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # 使用标准 ImageNet 均值和标准差
     ])
 
     # 数据集
     dataset = HalftoneDataset(
-        image_dir="/home/lexer/item/half-tone/dataset/VOC2012/train/raw",
+        image_dir="/home/lancer/item/half-tone/dataset/VOC2012/train/raw",
         transform=transform,
         max_images=10000
     )
     dataloader = DataLoader(dataset, batch_size=16, shuffle=True)
 
     # 初始化模型
-    model = HalftoneNet(in_channels=3, num_classes=256, num_features=64, block_size=3)
+    model = HalftoneNet(in_channels=3, num_classes=256, num_features=64, block_size=5)
 
     # 加载保存的模型权重
-    # checkpoint_path = "./checkpoints/latest_model.pth"
+    checkpoint_path = "./checkpoints/latest_model.pth"
+    checkpoint = torch.load(checkpoint_path)
     # checkpoint = torch.load(checkpoint_path, weights_only=False)
-    # model.load_state_dict(checkpoint["model_state_dict"])
+    model.load_state_dict(checkpoint["model_state_dict"])
 
     # 开始训练
     train(
@@ -247,10 +250,10 @@ if __name__ == "__main__":
         dataloader=dataloader,
         num_epochs=200,
         lr=1e-5,
-        lambda1=1.0,
+        lambda1=0.2,
         lambda2=0.05,
-        lambda3=1.5,
+        lambda3=8.0,
         lambda4=0.2,
-        sparsity_threshold=0.3,
+        sparsity_threshold=0.2,
         save_path="./checkpoints"
     )

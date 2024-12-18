@@ -149,25 +149,26 @@ def evaluate(model, dataloader, save_dir="./results"):
 if __name__ == "__main__":
     # 数据预处理
     transform = torchvision.transforms.Compose([
-        RandomCrop(216),  # 确保尺寸是 3 的倍数
+        RandomCrop(225),  # 确保尺寸是 3 的倍数
         ToTensor(),
         Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # 使用标准 ImageNet 均值和标准差
     ])
 
     # 加载测试集
     dataset = HalftoneDataset(
-        image_dir="/home/lexer/item/half-tone/dataset/VOC2012/train/raw",
+        image_dir="/home/lancer/item/half-tone/dataset/VOC2012/train/raw",
         transform=transform,
         max_images=10  # 控制评估最大图像数量
     )
     dataloader = DataLoader(dataset, batch_size=16, shuffle=False)
 
     # 初始化模型
-    model = HalftoneNet(in_channels=3, num_classes=256, num_features=64, block_size=3)
+    model = HalftoneNet(in_channels=3, num_classes=256, num_features=64, block_size=5)
 
     # 加载保存的模型权重
     checkpoint_path = "./checkpoints/latest_model.pth"
-    checkpoint = torch.load(checkpoint_path, weights_only=False)
+    checkpoint = torch.load(checkpoint_path)
+    # checkpoint = torch.load(checkpoint_path, weights_only=False)
     model.load_state_dict(checkpoint["model_state_dict"])
 
     # 开始评估
