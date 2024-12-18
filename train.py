@@ -44,7 +44,7 @@ def sparsity_loss(templates, sparsity_threshold=0.5):
     return loss
 
 
-def gaussian_blur(x, kernel_size=5, sigma=1.0):
+def gaussian_blur(x, kernel_size=7, sigma=1.0):
     """
     对图像应用高斯模糊
     Args:
@@ -64,7 +64,7 @@ def gaussian_blur(x, kernel_size=5, sigma=1.0):
     blurred_image = F.conv2d(x, kernel, padding=kernel_size//2, groups=x.size(1))
     return blurred_image
 
-def create_gaussian_kernel(kernel_size=5, sigma=1.0):
+def create_gaussian_kernel(kernel_size=7, sigma=1.0):
     """
     创建高斯核
     """
@@ -98,9 +98,27 @@ def color_regularization_loss(output, target):
     loss = torch.mean(color_diff)
     return loss
 
+def adjacent_difference_penalty(class_indices):
+    """
+    计算每个通道中相邻元素的差异并应用惩罚。
+    Args:
+        class_indices: 类索引张量 [B, C, H, W]
+    Returns:
+        penalty: 相邻差异的惩罚项
+    """
+    # 确保 class_indices 是浮点类型
+    class_indices = class_indices.float()
+
+    # 计算水平方向的差异
+    horizontal_diff = torch.abs(class_indices[:, :, :, 1:] - class_indices[:, :, :, :-1])
+    # 计算垂直方向的差异
+    vertical_diff = torch.abs(class_indices[:, :, 1:, :] - class_indices[:, :, :-1, :])
+    
+    # 计算惩罚项
+    penalty = torch.mean(horizontal_diff) + torch.mean(vertical_diff)
+    return penalty
 
 
-# 模型训练函数
 def train(
     model,
     dataloader,
@@ -109,7 +127,8 @@ def train(
     lambda1=2.0,
     lambda2=0.01,
     lambda3=0.8,
-    sparsity_threshold=0.5,
+    lambda4=0.5,
+    sparsity_threshold=0.2,
     save_path="./checkpoints"
 ):
     """
@@ -123,6 +142,8 @@ def train(
     # 创建保存路径
     os.makedirs(save_path, exist_ok=True)
     latest_model_path = os.path.join(save_path, "latest_model.pth")
+    mean = torch.tensor([0.485, 0.456, 0.406]).to(device).view(-1, 1, 1)
+    std = torch.tensor([0.229, 0.224, 0.225]).to(device).view(-1, 1, 1)
 
     for epoch in range(num_epochs):
         model.train()
@@ -131,10 +152,15 @@ def train(
         # tqdm 进度条
         with tqdm.tqdm(total=len(dataloader), desc=f"Epoch {epoch + 1}/{num_epochs}") as pbar:
             for i, batch in enumerate(dataloader):
-                batch = batch.to(device)  # 输入: [B, 3, H, W]
+                
+                batch = batch.to(device)  # 将输入移到相同的设备上
+                batch = batch * std + mean
 
                 # 前向传播
                 output, class_indices, offsets = model(batch)
+
+                # 确保 output 也在相同的设备上
+                output = output.to(device)
 
                 # 1. 重建损失（感知损失 + MSE）
                 recon_loss = F.mse_loss(output, batch) + perceptual_loss(output, batch)
@@ -145,8 +171,11 @@ def train(
                 # 3. 颜色正则化损失
                 color_loss = color_regularization_loss(output, batch)
 
+                # 4. 相邻值惩罚损失
+                adj_penalty = adjacent_difference_penalty(class_indices)
+
                 # 总损失
-                loss = lambda1 * recon_loss + lambda2 * sparse_loss + lambda3 * color_loss
+                loss = lambda1 * recon_loss + lambda2 * sparse_loss + lambda3 * color_loss + lambda4 / (1 + adj_penalty)
 
                 # 梯度清零，反向传播，优化
                 optimizer.zero_grad()
@@ -157,10 +186,11 @@ def train(
 
                 # 更新 tqdm 显示
                 pbar.set_postfix({
-                    "recon_loss": f"{recon_loss.item():.4f}",
-                    "sparse_loss": f"{sparse_loss.item():.4f}",
-                    "color_loss": f"{color_loss.item():.4f}",
-                    "total_loss": f"{loss.item():.4f}"
+                    "recon": f"{recon_loss.item():.4f}",
+                    "sparse": f"{sparse_loss.item():.4f}",
+                    "color": f"{color_loss.item():.4f}",
+                    "diff": f"{adj_penalty.item():.4f}",
+                    "total": f"{loss.item():.4f}"
                 })
                 pbar.update(1)
 
@@ -207,9 +237,9 @@ if __name__ == "__main__":
     model = HalftoneNet(in_channels=3, num_classes=256, num_features=64, block_size=3)
 
     # 加载保存的模型权重
-    checkpoint_path = "./checkpoints/latest_model.pth"
-    checkpoint = torch.load(checkpoint_path, weights_only=False)
-    model.load_state_dict(checkpoint["model_state_dict"])
+    # checkpoint_path = "./checkpoints/latest_model.pth"
+    # checkpoint = torch.load(checkpoint_path, weights_only=False)
+    # model.load_state_dict(checkpoint["model_state_dict"])
 
     # 开始训练
     train(
@@ -217,9 +247,10 @@ if __name__ == "__main__":
         dataloader=dataloader,
         num_epochs=200,
         lr=1e-5,
-        lambda1=2.0,
+        lambda1=1.0,
         lambda2=0.05,
-        lambda3=0.8,
-        sparsity_threshold=0.5,
+        lambda3=1.5,
+        lambda4=0.2,
+        sparsity_threshold=0.3,
         save_path="./checkpoints"
     )

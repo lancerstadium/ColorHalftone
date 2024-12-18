@@ -35,8 +35,9 @@ class FeatureExtractor(nn.Module):
 
 # 偏移分支和颜色分支（加深结构并引入残差连接）
 class OffsetAndColorBranch(nn.Module):
-    def __init__(self, in_channels, hidden_channels=32):
+    def __init__(self, in_channels, hidden_channels=32,  block_size=3):
         super(OffsetAndColorBranch, self).__init__()
+        self.block_size = block_size
         self.offset_predictor = nn.Sequential(
             nn.Conv2d(in_channels, hidden_channels, kernel_size=3, stride=1, padding=1),
             nn.ReLU(inplace=True),
@@ -49,7 +50,11 @@ class OffsetAndColorBranch(nn.Module):
         )
 
     def forward(self, x, residual):
-        adpresidual = F.adaptive_avg_pool2d(residual, 16)
+        # 根据 block_size 动态计算池化后的尺寸
+        output_size = (x.size(2) // self.block_size, x.size(3) // self.block_size)
+        
+        # 使用自适应池化，将图像池化为 output_size 大小
+        adpresidual = F.adaptive_avg_pool2d(residual, output_size)
         offsets = torch.tanh(self.offset_predictor(x) + adpresidual)  # 偏移范围 [-1, 1]
         quantized_colors = torch.sigmoid(self.color_predictor(x) + adpresidual)  # 颜色范围 [0, 1]
         return offsets, quantized_colors
@@ -174,6 +179,9 @@ class ReassembleModule(nn.Module):
         )
         colored_templates = applied_templates * ((1 - self.recue_ratio) * quantized_colors_expanded + self.recue_ratio * residual_blocks)
 
+        # 将colored_templates限制为0或1
+        colored_templates = torch.round(torch.sigmoid(colored_templates))  # 将浮动值转换为0或1
+
         # 重组为大图
         reconstructed_image = colored_templates.permute(0, 1, 2, 4, 3, 5).reshape(B, C, H, W)
 
@@ -188,7 +196,7 @@ class HalftoneNet(nn.Module):
     def __init__(self, in_channels=3, num_classes=64, num_features=64, block_size=3):
         super(HalftoneNet, self).__init__()
         self.feature_extractor = FeatureExtractor(in_channels, num_features)
-        self.offset_and_color_branch = OffsetAndColorBranch(num_features)
+        self.offset_and_color_branch = OffsetAndColorBranch(num_features, block_size)
         self.classification_branch = ClassificationBranch(num_features, num_classes, block_size)
         self.lookup_table = LookupTable(num_classes, block_size)
         self.reassemble = ReassembleModule(block_size)

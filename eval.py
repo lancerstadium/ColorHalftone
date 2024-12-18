@@ -11,7 +11,7 @@ from data import HalftoneDataset
 
 
 # 保存图片函数
-def save_image(tensor, file_path, mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]):
+def save_image(tensor, file_path, is_in=False):
     """
     将 Tensor 图像保存为文件。
     Args:
@@ -20,18 +20,21 @@ def save_image(tensor, file_path, mean=[0.485, 0.456, 0.406], std=[0.229, 0.224,
         mean: 反标准化的均值
         std: 反标准化的标准差
     """
+
     device = tensor.device  # 获取 tensor 的设备
-
-    # 将 mean 和 std 移动到 tensor 所在的设备
-    mean = torch.tensor(mean).to(device).view(-1, 1, 1)
-    std = torch.tensor(std).to(device).view(-1, 1, 1)
-
-    # 反标准化
-    tensor = tensor * std + mean
+    #print(tensor)
+    if is_in:
+        # 将 mean 和 std 移动到 tensor 所在的设备
+        mean=[0.485, 0.456, 0.406]
+        std=[0.229, 0.224, 0.225]
+        mean = torch.tensor(mean).to(device).view(-1, 1, 1)
+        std = torch.tensor(std).to(device).view(-1, 1, 1)
+        # 反标准化
+        tensor = tensor * std + mean
 
     # 将范围限制在 [0, 1] 之间
     tensor = tensor.clamp(0, 1)
-
+    
     # 转换为 (H, W, C) 并保存
     image = torchvision.transforms.ToPILImage()(tensor)
     image.save(file_path)
@@ -121,7 +124,7 @@ def evaluate(model, dataloader, save_dir="./results"):
                 # 保存图片
                 original_path = os.path.join(save_dir, f"org_{file_name}")
                 output_path = os.path.join(save_dir, f"out_{file_name}")
-                save_image(batch[idx], original_path)
+                save_image(batch[idx], original_path, is_in=True)
                 save_image(output[idx], output_path)
 
                 # 计算 PSNR 和 SSIM
@@ -146,7 +149,7 @@ def evaluate(model, dataloader, save_dir="./results"):
 if __name__ == "__main__":
     # 数据预处理
     transform = torchvision.transforms.Compose([
-        RandomCrop(48),  # 确保尺寸是 3 的倍数
+        RandomCrop(216),  # 确保尺寸是 3 的倍数
         ToTensor(),
         Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # 使用标准 ImageNet 均值和标准差
     ])
