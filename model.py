@@ -184,7 +184,7 @@ class ReassembleModule(nn.Module):
         colored_templates = (1 - applied_templates) * ((1 - self.recue_ratio) * quantized_colors_expanded + self.recue_ratio * residual_blocks)
 
         # 将colored_templates限制为0或1
-        colored_templates = torch.sigmoid(colored_templates)  # 将浮动值转换为0或1
+        colored_templates = torch.round(torch.sigmoid(colored_templates))  # 将浮动值转换为0或1
 
         # 重组为大图
         reconstructed_image = colored_templates.permute(0, 1, 2, 4, 3, 5).reshape(B, C, H, W)

@@ -255,7 +255,7 @@ def EVAL_HT():
     # 数据预处理
     transform1 = torchvision.transforms.Compose([
         Grayscale(num_output_channels=1),  # 灰度化为单通道
-        CenterCrop(48),  # 随机裁剪为 50x50
+        CenterCrop(192),  # 随机裁剪为 50x50
         ToTensor(),  # 转换为Tensor
     ])
     # 数据集
