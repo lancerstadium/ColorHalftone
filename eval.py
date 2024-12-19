@@ -1,7 +1,7 @@
 import torch
 import torchvision
 from torch.utils.data import DataLoader
-from torchvision.transforms import ToTensor, Resize, Normalize, RandomCrop
+from torchvision.transforms import ToTensor, Resize, Normalize, RandomCrop, CenterCrop, Grayscale
 import os
 import tqdm
 import numpy as np
@@ -83,7 +83,72 @@ def calculate_ssim(original, generated):
 
 
 # 评估函数
-def evaluate(model, dataloader, save_dir="./results"):
+def evaluate_sr(model, idataloader, odataloader, save_dir="./results"):
+    """
+    模型评估函数，计算 PSNR 和 SSIM。
+    Args:
+        model: 待评估的模型
+        dataloader: 测试集数据加载器
+        save_dir: 保存结果的目录
+    """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.to(device)
+    model.eval()
+
+    total_psnr = 0.0
+    total_ssim = 0.0
+    num_images = 0
+
+    # 创建保存目录
+    os.makedirs(save_dir, exist_ok=True)
+
+    # 获取文件名列表
+    file_names = idataloader.dataset.image_files
+
+    # 评估模式下禁用梯度计算
+    with torch.no_grad():
+        i = 0
+        for batch, ref in tqdm.tqdm(zip(idataloader,odataloader), desc="Evaluating"):
+            batch = batch.to(device)  # 输入形状: [B, 3, H, W]
+            ref = ref.to(device)
+
+            # 前向传播
+            output, _, _ = model(batch)  # 输出: [B, 3, H, W]
+
+            # 保存原图和输出图
+            batch_start = i * idataloader.batch_size
+            batch_end = min(batch_start + batch.size(0), len(file_names))
+            i = i + 1
+            for idx, file_name in enumerate(file_names[batch_start:batch_end]):
+                original_image = batch[idx].cpu().permute(1, 2, 0).numpy()  # 转换为 (H, W, C)
+                output_image = output[idx].cpu().permute(1, 2, 0).numpy()  # 转换为 (H, W, C)\
+                ref_image = ref[idx].cpu().permute(1, 2, 0).numpy()  # 转换为 (H, W, C)
+
+                # 保存图片
+                original_path = os.path.join(save_dir, f"org_{file_name}")
+                output_path = os.path.join(save_dir, f"out_{file_name}")
+                save_image(batch[idx], original_path, is_in=True)
+                save_image(output[idx], output_path)
+
+                # 计算 PSNR 和 SSIM
+                psnr_value = calculate_psnr(torch.tensor(ref_image), torch.tensor(output_image))
+                ssim_value = calculate_ssim(ref_image, output_image)
+
+                total_psnr += psnr_value
+                total_ssim += ssim_value
+                num_images += 1
+
+    # 平均 PSNR 和 SSIM
+    avg_psnr = total_psnr / num_images
+    avg_ssim = total_ssim / num_images
+
+    # 输出评估结果
+    print(f"Evaluation Results:")
+    print(f"  Average PSNR: {avg_psnr:.4f}")
+    print(f"  Average SSIM: {avg_ssim:.4f}")
+
+
+def evaluate_ht(model, dataloader, save_dir="./results"):
     """
     模型评估函数，计算 PSNR 和 SSIM。
     Args:
@@ -107,7 +172,8 @@ def evaluate(model, dataloader, save_dir="./results"):
 
     # 评估模式下禁用梯度计算
     with torch.no_grad():
-        for i, batch in enumerate(tqdm.tqdm(dataloader, desc="Evaluating")):
+        i = 0
+        for batch in tqdm.tqdm(dataloader, desc="Evaluating"):
             batch = batch.to(device)  # 输入形状: [B, 3, H, W]
 
             # 前向传播
@@ -116,10 +182,10 @@ def evaluate(model, dataloader, save_dir="./results"):
             # 保存原图和输出图
             batch_start = i * dataloader.batch_size
             batch_end = min(batch_start + batch.size(0), len(file_names))
-
+            i = i + 1
             for idx, file_name in enumerate(file_names[batch_start:batch_end]):
                 original_image = batch[idx].cpu().permute(1, 2, 0).numpy()  # 转换为 (H, W, C)
-                output_image = output[idx].cpu().permute(1, 2, 0).numpy()  # 转换为 (H, W, C)
+                output_image = output[idx].cpu().permute(1, 2, 0).numpy()  # 转换为 (H, W, C)\
 
                 # 保存图片
                 original_path = os.path.join(save_dir, f"org_{file_name}")
@@ -144,26 +210,37 @@ def evaluate(model, dataloader, save_dir="./results"):
     print(f"  Average PSNR: {avg_psnr:.4f}")
     print(f"  Average SSIM: {avg_ssim:.4f}")
 
-
-# 主函数
-if __name__ == "__main__":
+def EVAL_SR():
     # 数据预处理
-    transform = torchvision.transforms.Compose([
-        RandomCrop(225),  # 确保尺寸是 3 的倍数
-        ToTensor(),
+    transform1 = torchvision.transforms.Compose([
+        # Grayscale(num_output_channels=1),  # 灰度化为单通道
+        CenterCrop(48),  # 随机裁剪为 50x50
+        ToTensor(),  # 转换为Tensor
+        Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # 使用标准 ImageNet 均值和标准差
+    ])
+    transform2 = torchvision.transforms.Compose([
+        # Grayscale(num_output_channels=1),  # 灰度化为单通道
+        CenterCrop(192),  # 随机裁剪为 50x50
+        ToTensor(),  # 转换为Tensor
         Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # 使用标准 ImageNet 均值和标准差
     ])
 
-    # 加载测试集
-    dataset = HalftoneDataset(
-        image_dir="/home/lancer/item/half-tone/dataset/VOC2012/train/raw",
-        transform=transform,
-        max_images=10  # 控制评估最大图像数量
+    # 数据集
+    idataset = HalftoneDataset(
+        image_dir="/home/lexer/item/DIV2K/DIV2K_train_LR_bicubic/X4",
+        transform=transform1,
+        max_images=10
     )
-    dataloader = DataLoader(dataset, batch_size=16, shuffle=False)
+    odataset = HalftoneDataset(
+        image_dir="/home/lexer/item/DIV2K/DIV2K_train_HR",
+        transform=transform2,
+        max_images=10
+    )
+    idataloader = DataLoader(idataset, batch_size=16, shuffle=False)
+    odataloader = DataLoader(odataset, batch_size=16, shuffle=False)
 
     # 初始化模型
-    model = HalftoneNet(in_channels=3, num_classes=256, num_features=64, block_size=5)
+    model = HalftoneNet(in_channels=3, num_classes=64, num_features=128, block_size=3, scale=4)
 
     # 加载保存的模型权重
     checkpoint_path = "./checkpoints/latest_model.pth"
@@ -172,4 +249,35 @@ if __name__ == "__main__":
     model.load_state_dict(checkpoint["model_state_dict"])
 
     # 开始评估
-    evaluate(model, dataloader, save_dir="./results")
+    evaluate_sr(model, idataloader, odataloader, save_dir="./results")
+
+def EVAL_HT():
+    # 数据预处理
+    transform1 = torchvision.transforms.Compose([
+        Grayscale(num_output_channels=1),  # 灰度化为单通道
+        CenterCrop(48),  # 随机裁剪为 50x50
+        ToTensor(),  # 转换为Tensor
+    ])
+    # 数据集
+    idataset = HalftoneDataset(
+        image_dir="/home/lexer/item/DIV2K/DIV2K_train_LR_bicubic/X4",
+        transform=transform1,
+        max_images=10
+    )
+    idataloader = DataLoader(idataset, batch_size=16, shuffle=False)
+
+    # 初始化模型
+    model = HalftoneNet(in_channels=1, num_classes=64, num_features=128, block_size=3, scale=1)
+
+    # 加载保存的模型权重
+    checkpoint_path = "./checkpoints/latest_model.pth"
+    checkpoint = torch.load(checkpoint_path)
+    # checkpoint = torch.load(checkpoint_path, weights_only=False)
+    model.load_state_dict(checkpoint["model_state_dict"])
+    # 开始评估
+    evaluate_ht(model, idataloader, save_dir="./results")
+
+# 主函数
+if __name__ == "__main__":
+    EVAL_HT()
+

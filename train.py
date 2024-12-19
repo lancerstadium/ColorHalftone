@@ -3,9 +3,9 @@ import torch.optim as optim
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
-# from torchvision.models import vgg16, VGG16_Weights
-from torchvision.models import vgg16
-from torchvision.transforms import ToTensor, Resize, Normalize, RandomCrop
+from torchvision.models import vgg16, VGG16_Weights
+# from torchvision.models import vgg16
+from torchvision.transforms import ToTensor, Resize, Normalize, RandomCrop, Grayscale, CenterCrop
 from torch.utils.data import DataLoader
 import os
 import tqdm
@@ -18,8 +18,8 @@ from model import HalftoneNet
 class PerceptualLoss(nn.Module):
     def __init__(self):
         super(PerceptualLoss, self).__init__()
-        vgg = vgg16(pretrained=True).features[:16]  # 使用 VGG16 到 relu3_3
-        # vgg = vgg16(weights=VGG16_Weights.DEFAULT).features[:16]  # 使用 VGG16 到 relu3_3
+        # vgg = vgg16(pretrained=True).features[:16]  # 使用 VGG16 到 relu3_3
+        vgg = vgg16(weights=VGG16_Weights.DEFAULT).features[:16]  # 使用 VGG16 到 relu3_3
         self.vgg = vgg.eval()
         for param in self.vgg.parameters():
             param.requires_grad = False
@@ -121,10 +121,9 @@ def adjacent_difference_penalty(class_indices):
     return penalty
 
 
-def train(
+def train_ht(
     model,
-    idataloader,
-    odataloader,
+    dataloader,
     num_epochs=50,
     lr=1e-4,
     lambda1=2.0,
@@ -151,12 +150,101 @@ def train(
         epoch_loss = 0.0
 
         # tqdm 进度条
-        with tqdm.tqdm(total=len(idataloader), desc=f"Epoch {epoch + 1}/{num_epochs}") as pbar:
-            for i, batch in enumerate(idataloader):
+        with tqdm.tqdm(total=len(dataloader), desc=f"Epoch {epoch + 1}/{num_epochs}") as pbar:
+            for batch in dataloader:
                 
                 batch = batch.to(device)  # 将输入移到相同的设备上
-                ref = odataloader[i].to(device)
+                
+                # 前向传播
+                output, class_indices, offsets = model(batch)
 
+                # 确保 output 也在相同的设备上
+                output = output.to(device)
+
+                # 1. 重建损失（感知损失 + MSE）
+                recon_loss = F.mse_loss(output, batch)
+
+                # 2. 稀疏性损失
+                sparse_loss = sparsity_loss(model.lookup_table.templates, sparsity_threshold) + sparsity_loss(output, 1 - sparsity_threshold)
+
+                # 3. 颜色正则化损失
+                color_loss = color_regularization_loss(output, batch)
+
+                # 4. 相邻值惩罚损失
+                adj_penalty = adjacent_difference_penalty(class_indices)
+
+                # 总损失
+                loss = lambda1 * recon_loss + lambda2 * sparse_loss + lambda3 * color_loss + lambda4 / (1 + adj_penalty)
+
+                # 梯度清零，反向传播，优化
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+                epoch_loss += loss.item()
+
+                # 更新 tqdm 显示
+                pbar.set_postfix({
+                    "recon": f"{recon_loss.item():.4f}",
+                    "sparse": f"{sparse_loss.item():.4f}",
+                    "color": f"{color_loss.item():.4f}",
+                    "diff": f"{adj_penalty.item():.4f}",
+                    "total": f"{loss.item():.4f}"
+                })
+                pbar.update(1)
+
+        # 平均损失
+        avg_loss = epoch_loss / len(dataloader)
+        print(f"Epoch [{epoch + 1}/{num_epochs}] completed. Average Loss: {avg_loss:.4f}")
+
+        # 保存模型
+        checkpoint = {
+            "epoch": epoch + 1,
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "loss": avg_loss
+        }
+        torch.save(checkpoint, latest_model_path)
+        print(f"Model saved: {latest_model_path}")
+
+        # 每 10 个 epoch 额外保存
+        if (epoch + 1) % 10 == 0:
+            epoch_model_path = os.path.join(save_path, f"model_epoch_{epoch + 1}.pth")
+            torch.save(checkpoint, epoch_model_path)
+            print(f"Checkpoint saved at epoch {epoch + 1}: {epoch_model_path}")
+
+
+def train_sr(
+    model,
+    idataloader,
+    odataloader,
+    num_epochs=50,
+    lr=1e-4,
+    save_path="./checkpoints"
+):
+    """
+    模型训练函数，结合感知损失、稀疏性损失和颜色正则化损失。
+    """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.to(device)
+    perceptual_loss = PerceptualLoss().to(device)
+    optimizer = optim.Adam(model.parameters(), lr=lr)
+
+    # 创建保存路径
+    os.makedirs(save_path, exist_ok=True)
+    latest_model_path = os.path.join(save_path, "latest_model.pth")
+
+    for epoch in range(num_epochs):
+        model.train()
+        epoch_loss = 0.0
+
+        # tqdm 进度条
+        with tqdm.tqdm(total=len(idataloader), desc=f"Epoch {epoch + 1}/{num_epochs}") as pbar:
+            for batch,ref in zip(idataloader,odataloader):
+                
+                batch = batch.to(device)  # 将输入移到相同的设备上
+                ref = ref.to(device)
+                
                 # 前向传播
                 output, class_indices, offsets = model(batch)
 
@@ -165,20 +253,8 @@ def train(
 
                 # 1. 重建损失（感知损失 + MSE）
                 recon_loss = F.mse_loss(output, ref) 
-                # recon_loss = F.mse_loss(output, batch) + perceptual_loss(output, batch)
-
-                # # 2. 稀疏性损失
-                # sparse_loss = sparsity_loss(model.lookup_table.templates, sparsity_threshold) + sparsity_loss(output, 1 - sparsity_threshold)
-
-                # # 3. 颜色正则化损失
-                # color_loss = color_regularization_loss(output, batch)
-
-                # # 4. 相邻值惩罚损失
-                # adj_penalty = adjacent_difference_penalty(class_indices)
-
                 # 总损失
-                loss = lambda1 * recon_loss
-                # loss = lambda1 * recon_loss + lambda2 * sparse_loss + lambda3 * color_loss + lambda4 / (1 + adj_penalty)
+                loss = recon_loss
 
                 # 梯度清零，反向传播，优化
                 optimizer.zero_grad()
@@ -218,32 +294,24 @@ def train(
             print(f"Checkpoint saved at epoch {epoch + 1}: {epoch_model_path}")
 
 
-# 主函数
-if __name__ == "__main__":
-
+def TRAIN_HT():
     # 数据预处理
-    transform = torchvision.transforms.Compose([
-        RandomCrop(50),  # 随机裁剪为 50x50
+    transform1 = torchvision.transforms.Compose([
+        Grayscale(num_output_channels=1),  # 灰度化为单通道
+        CenterCrop(48),  # 随机裁剪为 50x50
         ToTensor(),  # 转换为Tensor
-        Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # 使用标准 ImageNet 均值和标准差
+        # Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # 使用标准 ImageNet 均值和标准差
     ])
 
     # 数据集
     idataset = HalftoneDataset(
-        image_dir="/home/lancer/item/DIV2K/DIV2K_train_LR_bicubic/X4",
-        transform=transform,
-        max_images=800
-    )
-    odataset = HalftoneDataset(
-        image_dir="/home/lancer/item/DIV2K/DIV2K_train_HR",
-        transform=transform,
+        image_dir="/home/lexer/item/DIV2K/DIV2K_train_LR_bicubic/X4",
+        transform=transform1,
         max_images=800
     )
     idataloader = DataLoader(idataset, batch_size=16, shuffle=False)
-    odataloader = DataLoader(odataset, batch_size=16, shuffle=False)
-
     # 初始化模型
-    model = HalftoneNet(in_channels=3, num_classes=256, num_features=64, block_size=5)
+    model = HalftoneNet(in_channels=1, num_classes=64, num_features=128, block_size=3, scale=1)
 
     # 加载保存的模型权重
     # checkpoint_path = "./checkpoints/latest_model.pth"
@@ -252,16 +320,67 @@ if __name__ == "__main__":
     # model.load_state_dict(checkpoint["model_state_dict"])
 
     # 开始训练
-    train(
+    train_ht(
         model=model,
-        idataloader=idataloader,
-        odataloader=odataloader,
+        dataloader=idataloader,
         num_epochs=200,
         lr=1e-5,
-        lambda1=0.2,
+        lambda1=1.0,
         lambda2=0.05,
         lambda3=8.0,
         lambda4=0.2,
         sparsity_threshold=0.2,
         save_path="./checkpoints"
     )
+
+def TRAIN_SR():
+    # 数据预处理
+    transform1 = torchvision.transforms.Compose([
+        # Grayscale(num_output_channels=1),  # 灰度化为单通道
+        CenterCrop(48),  # 随机裁剪为 50x50
+        ToTensor(),  # 转换为Tensor
+        Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # 使用标准 ImageNet 均值和标准差
+    ])
+    transform2 = torchvision.transforms.Compose([
+        # Grayscale(num_output_channels=1),  # 灰度化为单通道
+        CenterCrop(192),  # 随机裁剪为 50x50
+        ToTensor(),  # 转换为Tensor
+        Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # 使用标准 ImageNet 均值和标准差
+    ])
+
+    # 数据集
+    idataset = HalftoneDataset(
+        image_dir="/home/lexer/item/DIV2K/DIV2K_train_LR_bicubic/X4",
+        transform=transform1,
+        max_images=800
+    )
+    odataset = HalftoneDataset(
+        image_dir="/home/lexer/item/DIV2K/DIV2K_train_HR",
+        transform=transform2,
+        max_images=800
+    )
+    idataloader = DataLoader(idataset, batch_size=16, shuffle=False)
+    odataloader = DataLoader(odataset, batch_size=16, shuffle=False)
+
+    # 初始化模型
+    model = HalftoneNet(in_channels=3, num_classes=64, num_features=128, block_size=3, scale=4)
+
+    # 加载保存的模型权重
+    # checkpoint_path = "./checkpoints/latest_model.pth"
+    # checkpoint = torch.load(checkpoint_path)
+    # # checkpoint = torch.load(checkpoint_path, weights_only=False)
+    # model.load_state_dict(checkpoint["model_state_dict"])
+
+    # 开始训练
+    train_sr(
+        model=model,
+        idataloader=idataloader,
+        odataloader=odataloader,
+        num_epochs=200,
+        lr=1e-5,
+        save_path="./checkpoints"
+    )
+
+# 主函数
+if __name__ == "__main__":
+    TRAIN_HT()
