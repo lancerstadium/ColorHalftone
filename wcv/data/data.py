@@ -5,7 +5,7 @@ from PIL import Image
 import os
 
 # 数据集定义
-class HalftoneDataset(Dataset):
+class SingleDataset(Dataset):
     def __init__(self, image_dir, transform=None, max_images=None):
         self.image_dir = image_dir
         self.image_files = os.listdir(image_dir)[:max_images]  # 控制最大图像数量
