@@ -12,11 +12,11 @@ def calculate_psnr(original, generated):
     Returns:
         psnr_value: PSNR 值
     """
-    mse = torch.mean((original - generated) ** 2)
+    mse = np.mean((original - generated) ** 2)
     if mse == 0:
         return float('inf')
     max_pixel = 1.0  # 像素值范围 [0, 1]
-    psnr_value = 20 * torch.log10(max_pixel / torch.sqrt(mse))
+    psnr_value = 20 * np.log10(max_pixel / np.sqrt(mse))
     return psnr_value.item()
 
 

@@ -37,24 +37,24 @@ def train_ht(
 
         # tqdm 进度条
         with tqdm.tqdm(total=len(dataloader), desc=f"Epoch {epoch + 1}/{num_epochs}") as pbar:
-            for batch in dataloader:
+            for org in dataloader:
                 
-                batch = batch.to(device)  # 将输入移到相同的设备上
+                org = org.to(device)  # 将输入移到相同的设备上
                 
                 # 前向传播
-                output, class_indices, offsets = model(batch)
+                out, class_indices, offsets = model(org)
 
-                # 确保 output 也在相同的设备上
-                output = output.to(device)
+                # 确保 out 也在相同的设备上
+                out = out.to(device)
 
                 # 1. 重建损失（感知损失 + MSE）
-                recon_loss = F.mse_loss(output, batch)
+                recon_loss = F.mse_loss(out, org)
 
                 # 2. 稀疏性损失
-                sparse_loss = sparsity_loss(model.lookup_table.templates, sparsity_threshold) + sparsity_loss(output, 1 - sparsity_threshold)
+                sparse_loss = sparsity_loss(model.lookup_table.templates, sparsity_threshold) + sparsity_loss(out, 1 - sparsity_threshold)
 
                 # 3. 颜色正则化损失
-                color_loss = color_regularization_loss(output, batch)
+                color_loss = color_regularization_loss(out, org)
 
                 # 4. 相邻值惩罚损失
                 adj_penalty = adjacent_difference_penalty(class_indices)
@@ -102,9 +102,10 @@ def train_ht(
 
 def train_sr(
     model,
-    idataloader,
-    odataloader,
+    pdataloader=None,
+    load_path=None,
     num_epochs=50,
+    save_epoch=20,
     lr=1e-4,
     save_path="./checkpoints"
 ):
@@ -113,6 +114,10 @@ def train_sr(
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
+    if load_path:
+        checkpoint = torch.load(load_path)
+        model.load_state_dict(checkpoint["model_state_dict"])
+    
     perceptual_loss = PerceptualLoss().to(device)
     optimizer = optim.Adam(model.parameters(), lr=lr)
 
@@ -125,20 +130,16 @@ def train_sr(
         epoch_loss = 0.0
 
         # tqdm 进度条
-        with tqdm.tqdm(total=len(idataloader), desc=f"Epoch {epoch + 1}/{num_epochs}") as pbar:
-            for batch,ref in zip(idataloader,odataloader):
-                
-                batch = batch.to(device)  # 将输入移到相同的设备上
+        with tqdm.tqdm(total=len(pdataloader), desc=f"Epoch {epoch + 1}/{num_epochs}") as pbar:
+            for org, ref in pdataloader:
+                org = org.to(device)  # 将输入移到相同的设备上
                 ref = ref.to(device)
                 
                 # 前向传播
-                output = model(batch)
-
-                # 确保 output 也在相同的设备上
-                output = output.to(device)
+                out = model(org).to(device)
 
                 # 1. 重建损失（感知损失 + MSE）
-                recon_loss = F.mse_loss(output, ref) 
+                recon_loss = F.mse_loss(out, ref) 
                 # 总损失
                 loss = recon_loss
 
@@ -146,21 +147,17 @@ def train_sr(
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
-
                 epoch_loss += loss.item()
 
                 # 更新 tqdm 显示
                 pbar.set_postfix({
                     "recon": f"{recon_loss.item():.4f}",
-                    # "sparse": f"{sparse_loss.item():.4f}",
-                    # "color": f"{color_loss.item():.4f}",
-                    # "diff": f"{adj_penalty.item():.4f}",
                     "total": f"{loss.item():.4f}"
                 })
                 pbar.update(1)
 
         # 平均损失
-        avg_loss = epoch_loss / len(idataloader)
+        avg_loss = epoch_loss / len(pdataloader)
         print(f"Epoch [{epoch + 1}/{num_epochs}] completed. Average Loss: {avg_loss:.4f}")
 
         # 保存模型
@@ -173,8 +170,8 @@ def train_sr(
         torch.save(checkpoint, latest_model_path)
         print(f"Model saved: {latest_model_path}")
 
-        # 每 10 个 epoch 额外保存
-        if (epoch + 1) % 10 == 0:
+        # 每 save_epoch 个 epoch 额外保存
+        if (epoch + 1) % save_epoch == 0:
             epoch_model_path = os.path.join(save_path, f"model_epoch_{epoch + 1}.pth")
             torch.save(checkpoint, epoch_model_path)
             print(f"Checkpoint saved at epoch {epoch + 1}: {epoch_model_path}")

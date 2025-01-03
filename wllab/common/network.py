@@ -335,8 +335,60 @@ class IMDB(nn.Module):
         return x
 
 
+class DepthwiseConv(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1, dilation=1, bias=True):
+        super(DepthwiseConv, self).__init__()
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size, stride=stride, padding=padding, dilation=dilation,
+                              groups=in_channels, bias=bias)
+
+    def forward(self, x):
+        return self.conv(x)
+
+
+class PointwiseConv(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size=1, stride=1, padding=0, dilation=1, bias=True):
+        super(PointwiseConv, self).__init__()
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size, stride=stride, padding=padding, dilation=dilation,
+                              bias=bias)
+
+    def forward(self, x):
+        return self.conv(x)
+    
+
+class DPA_Module(nn.Module):
+    def __init__(self, in_channels, out_channels, out_dim, mlp_field=7):
+        """
+        DPA_Module
+        (in, out, out_dim, mlp_field) = (1, 64, 1, 7)
+        """
+        super(DPA_Module, self).__init__()
+        self.mlp_field = mlp_field
+        self.dwcv1 = DepthwiseConv(in_channels, in_channels, kernel_size=1, padding=0)
+        self.dwcvM = DepthwiseConv(in_channels, in_channels, kernel_size=mlp_field, padding=(mlp_field // 2))
+        self.ipwcv = PointwiseConv(in_channels, out_channels)
+        self.opwcv = PointwiseConv(out_channels, out_dim)
+        
+
+    def forward(self, x):
+        x1 = x + self.dwcvM(x) + self.dwcv1(x)
+        x2 = torch.div(x1, self.mlp_field * self.mlp_field)
+        x3 = self.ipwcv(x2)
+        x4 = self.opwcv(x3) + x2
+        out = torch.tanh(x4)
+        out = round_func(out * 127)
+        bias, norm = 127, 255.0
+        out = round_func(torch.clamp(out + bias, 0, 255)) / norm
+        return out
+
+
+
 class RC_Module(nn.Module):
     def __init__(self, in_channels, out_channels, out_dim, mlp_field=7):
+        """
+        RC Module
+        (in, out, out_dim, mlp_field) = (1, 64, 1, 7)
+        Parameters = (7 * 7) * (1 * 64 + 64 * 1) = 6272
+        """
         super(RC_Module, self).__init__()
         self.mlp_field = mlp_field
         for i in range(mlp_field * mlp_field):

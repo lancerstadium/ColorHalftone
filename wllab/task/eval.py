@@ -44,19 +44,21 @@ def save_image(tensor, file_path, is_in=False):
 
 
 
-
-
 # 评估函数
-def evaluate_sr(model, idataloader, odataloader, save_dir="./results"):
+def evaluate_sr(model, pdataloader, load_path='./checkpoints/latest_model.pth', save_dir="./results"):
     """
     模型评估函数，计算 PSNR 和 SSIM。
     Args:
         model: 待评估的模型
-        dataloader: 测试集数据加载器
+        pdataloader: 对测试集数据加载器
         save_dir: 保存结果的目录
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
+    if load_path:
+        checkpoint = torch.load(load_path)
+        model.load_state_dict(checkpoint["model_state_dict"])
+
     model.eval()
 
     total_psnr = 0.0
@@ -67,36 +69,37 @@ def evaluate_sr(model, idataloader, odataloader, save_dir="./results"):
     os.makedirs(save_dir, exist_ok=True)
 
     # 获取文件名列表
-    file_names = idataloader.dataset.image_files
+    file_names = pdataloader.dataset.image_files
 
     # 评估模式下禁用梯度计算
     with torch.no_grad():
         i = 0
-        for batch, ref in tqdm.tqdm(zip(idataloader,odataloader), desc="Evaluating"):
-            batch = batch.to(device)  # 输入形状: [B, 3, H, W]
+        for org, ref in tqdm.tqdm(pdataloader, desc="Evaluating", total=len(pdataloader)):
+            org = org.to(device)  # 输入形状: [B, 3, H, W]
             ref = ref.to(device)
-
             # 前向传播
-            output = model(batch)  # 输出: [B, 3, H, W]
+            out = model(org)  # 输出: [B, 3, H, W]
 
             # 保存原图和输出图
-            batch_start = i * idataloader.batch_size
-            batch_end = min(batch_start + batch.size(0), len(file_names))
+            org_start = i * pdataloader.batch_size
+            org_end = min(org_start + org.size(0), len(file_names))
             i = i + 1
-            for idx, file_name in enumerate(file_names[batch_start:batch_end]):
-                original_image = batch[idx].cpu().permute(1, 2, 0).numpy()  # 转换为 (H, W, C)
-                output_image = output[idx].cpu().permute(1, 2, 0).numpy()  # 转换为 (H, W, C)\
+            for idx, file_name in enumerate(file_names[org_start:org_end]):
+                org_image = org[idx].cpu().permute(1, 2, 0).numpy()  # 转换为 (H, W, C)
+                out_image = out[idx].cpu().permute(1, 2, 0).numpy()  # 转换为 (H, W, C)\
                 ref_image = ref[idx].cpu().permute(1, 2, 0).numpy()  # 转换为 (H, W, C)
 
                 # 保存图片
-                original_path = os.path.join(save_dir, f"org_{file_name}")
-                output_path = os.path.join(save_dir, f"out_{file_name}")
-                save_image(batch[idx], original_path, is_in=True)
-                save_image(output[idx], output_path)
+                org_path = os.path.join(save_dir, f"org_{file_name}")
+                out_path = os.path.join(save_dir, f"out_{file_name}")
+                ref_path = os.path.join(save_dir, f"ref_{file_name}")
+                save_image(org[idx], org_path, is_in=True)
+                save_image(out[idx], out_path)
+                save_image(ref[idx], ref_path, is_in=True)
 
                 # 计算 PSNR 和 SSIM
-                psnr_value = calculate_psnr(torch.tensor(ref_image), torch.tensor(output_image))
-                ssim_value = calculate_ssim(ref_image, output_image)
+                psnr_value = calculate_psnr(ref_image, out_image)
+                ssim_value = calculate_ssim(ref_image, out_image)
 
                 total_psnr += psnr_value
                 total_ssim += ssim_value
@@ -137,24 +140,24 @@ def evaluate_ht(model, dataloader, save_dir="./results"):
     # 评估模式下禁用梯度计算
     with torch.no_grad():
         i = 0
-        for batch in tqdm.tqdm(dataloader, desc="Evaluating"):
-            batch = batch.to(device)  # 输入形状: [B, 3, H, W]
+        for org in tqdm.tqdm(dataloader, desc="Evaluating"):
+            org = org.to(device)  # 输入形状: [B, 3, H, W]
 
             # 前向传播
-            output, _, _ = model(batch)  # 输出: [B, 3, H, W]
+            output, _, _ = model(org)  # 输出: [B, 3, H, W]
 
             # 保存原图和输出图
-            batch_start = i * dataloader.batch_size
-            batch_end = min(batch_start + batch.size(0), len(file_names))
+            org_start = i * dataloader.org_size
+            org_end = min(org_start + org.size(0), len(file_names))
             i = i + 1
-            for idx, file_name in enumerate(file_names[batch_start:batch_end]):
-                original_image = batch[idx].cpu().permute(1, 2, 0).numpy()  # 转换为 (H, W, C)
+            for idx, file_name in enumerate(file_names[org_start:org_end]):
+                original_image = org[idx].cpu().permute(1, 2, 0).numpy()  # 转换为 (H, W, C)
                 output_image = output[idx].cpu().permute(1, 2, 0).numpy()  # 转换为 (H, W, C)\
 
                 # 保存图片
                 original_path = os.path.join(save_dir, f"org_{file_name}")
                 output_path = os.path.join(save_dir, f"out_{file_name}")
-                save_image(batch[idx], original_path, is_in=True)
+                save_image(org[idx], original_path, is_in=True)
                 save_image(output[idx], output_path)
 
                 # 计算 PSNR 和 SSIM

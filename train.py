@@ -2,10 +2,10 @@ import torchvision
 from torchvision.transforms import ToTensor, Resize, Normalize, RandomCrop, Grayscale, CenterCrop
 from torch.utils.data import DataLoader
 
-from wcv.network.lut import SRNet
-from wcv.network.ht import HalftoneNet
-from wcv.data.data import SingleDataset
-from wcv.task.train import train_ht, train_sr
+from wllab.network.lut import SRNet, SPF_LUT_net, MuLUT
+from wllab.network.ht import HalftoneNet
+from wllab.data.data import SingleDataset, PairedDataset
+from wllab.task.train import train_ht, train_sr
 
 def TRAIN_HT():
     # 数据预处理
@@ -25,13 +25,7 @@ def TRAIN_HT():
     idataloader = DataLoader(idataset, batch_size=16, shuffle=False)
     # 初始化模型
     model = HalftoneNet(in_channels=1, num_classes=64, num_features=128, block_size=3, scale=1)
-
-    # 加载保存的模型权重
-    # checkpoint_path = "./checkpoints/latest_model.pth"
-    # checkpoint = torch.load(checkpoint_path)
-    # # checkpoint = torch.load(checkpoint_path, weights_only=False)
-    # model.load_state_dict(checkpoint["model_state_dict"])
-
+    
     # 开始训练
     train_ht(
         model=model,
@@ -48,48 +42,33 @@ def TRAIN_HT():
 
 def TRAIN_SR():
     # 数据预处理
-    transform1 = torchvision.transforms.Compose([
+    transform = torchvision.transforms.Compose([
         # Grayscale(num_output_channels=1),  # 灰度化为单通道
-        CenterCrop(48),  # 随机裁剪为 50x50
-        ToTensor(),  # 转换为Tensor
-        Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # 使用标准 ImageNet 均值和标准差
-    ])
-    transform2 = torchvision.transforms.Compose([
-        # Grayscale(num_output_channels=1),  # 灰度化为单通道
-        CenterCrop(188),  # 随机裁剪为 50x50
         ToTensor(),  # 转换为Tensor
         Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # 使用标准 ImageNet 均值和标准差
     ])
 
-    # 数据集
-    idataset = SingleDataset(
-        image_dir="/home/lancer/item/DIV2K/LR/X4",
-        transform=transform1,
-        max_images=800
+    pdataset = PairedDataset(
+        image_dir1="/home/lancer/item/DIV2K/LR/X4",
+        image_dir2="/home/lancer/item/DIV2K/HR",
+        transform1=transform,
+        transform2=transform,
+        max_images=800,
+        crop_size=(48, 48),
+        upscale_factor=188/48,
+        is_DIV2K=True
     )
-    odataset = SingleDataset(
-        image_dir="/home/lancer/item/DIV2K/HR",
-        transform=transform2,
-        max_images=800
-    )
-    idataloader = DataLoader(idataset, batch_size=16, shuffle=False)
-    odataloader = DataLoader(odataset, batch_size=16, shuffle=False)
+    pdataloader = DataLoader(pdataset, batch_size=16, shuffle=False)
 
     # 初始化模型
     model = SRNet(mode='SxN', nf=64, upscale=4, dense=True)
     # model = HalftoneNet(in_channels=3, num_classes=64, num_features=128, block_size=3, scale=4)
 
-    # 加载保存的模型权重
-    # checkpoint_path = "./checkpoints/latest_model.pth"
-    # checkpoint = torch.load(checkpoint_path)
-    # # checkpoint = torch.load(checkpoint_path, weights_only=False)
-    # model.load_state_dict(checkpoint["model_state_dict"])
-
     # 开始训练
     train_sr(
         model=model,
-        idataloader=idataloader,
-        odataloader=odataloader,
+        pdataloader=pdataloader,
+        load_path=None,
         num_epochs=200,
         lr=1e-5,
         save_path="./checkpoints"

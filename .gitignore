@@ -1,2 +1,8 @@
 __pycache__
 model_epoch_*
+*.log
+*.aux
+*.bbl
+*.blg
+*.out
+*.synctex.gz
