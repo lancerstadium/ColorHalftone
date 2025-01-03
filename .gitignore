@@ -5,4 +5,5 @@ model_epoch_*
 *.bbl
 *.blg
 *.out
+*.npy
 *.synctex.gz

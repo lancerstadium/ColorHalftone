@@ -1,43 +1,47 @@
-import torch
 import numpy as np
 
 
+
 # 计算 PSNR
-def calculate_psnr(original, generated):
+def calculate_psnr(original, generated) -> float:
     """
-    计算 PSNR（峰值信噪比）。
+    计算 PSNR（峰值信噪比）。 numpy 版本
     Args:
-        original: 原图像，形状为 (C, H, W)，范围 [0, 1]
-        generated: 生成图像，形状为 (C, H, W)，范围 [0, 1]
+        original: 原图像，形状为 (H, W, C)，范围 [0, 1]
+        generated: 生成图像，形状为 (H, W, C)，范围 [0, 1]
     Returns:
         psnr_value: PSNR 值
     """
     mse = np.mean((original - generated) ** 2)
     if mse == 0:
-        return float('inf')
-    max_pixel = 1.0  # 像素值范围 [0, 1]
-    psnr_value = 20 * np.log10(max_pixel / np.sqrt(mse))
-    return psnr_value.item()
+        return float("inf")
+    return 20 * np.log10(1.0 / np.sqrt(mse))
 
 
-def calculate_ssim(original, generated):
+def calculate_ssim(original, generated) -> float:
     """
-    计算 SSIM（结构相似性）。
+    计算 SSIM（结构相似性）。 numpy 版本
     Args:
-        original: 原图像，形状为 (C, H, W)，范围 [0, 1]
-        generated: 生成图像，形状为 (C, H, W)，范围 [0, 1]
+        original: 原图像，形状为 (H, W, C)，范围 [0, 1]
+        generated: 生成图像，形状为 (H, W, C)，范围 [0, 1]
     Returns:
         ssim_value: SSIM 值
     """
-    C1 = 0.01 ** 2
-    C2 = 0.03 ** 2
+    K1 = 0.01
+    K2 = 0.03
+    L = 1  # 像素值范围 [0, L]
+    C1 = (K1 * L) ** 2
+    C2 = (K2 * L) ** 2
 
-    # 使用 NumPy 直接计算
-    mu_x = np.mean(original, axis=(1, 2), keepdims=True)
-    mu_y = np.mean(generated, axis=(1, 2), keepdims=True)
-    sigma_x = np.var(original, axis=(1, 2), keepdims=True)
-    sigma_y = np.var(generated, axis=(1, 2), keepdims=True)
-    sigma_xy = np.mean((original - mu_x) * (generated - mu_y), axis=(1, 2), keepdims=True)
+    original = original.astype(np.float64)
+    generated = generated.astype(np.float64)
+    cov = np.cov(original.flatten(), generated.flatten(), bias=True)
+    mean_original = np.mean(original)
+    mean_generated = np.mean(generated)
+    var_original = np.var(original)
+    var_generated = np.var(generated)
 
-    ssim_map = ((2 * mu_x * mu_y + C1) * (2 * sigma_xy + C2)) / ((mu_x ** 2 + mu_y ** 2 + C1) * (sigma_x + sigma_y + C2))
-    return np.mean(ssim_map)
+    numerator = (2 * mean_original * mean_generated + C1) * (2 * cov[0, 1] + C2)
+    denominator = (mean_original ** 2 + mean_generated ** 2 + C1) * (var_original + var_generated + C2)
+    ssim_value = numerator / denominator
+    return ssim_value

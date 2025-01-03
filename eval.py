@@ -19,8 +19,8 @@ def EVAL_SR():
     ])
 
     pdataset = PairedDataset(
-        image_dir1="/home/lancer/item/DIV2K/LR/X4",
-        image_dir2="/home/lancer/item/DIV2K/HR",
+        image_dir1="../dataset/DIV2K/LR/X4",
+        image_dir2="../dataset/DIV2K/HR",
         transform1=transform,
         transform2=transform,
         max_images=10,
@@ -46,7 +46,7 @@ def EVAL_HT():
     ])
     # 数据集
     idataset = SingleDataset(
-        image_dir="/home/lexer/item/DIV2K/DIV2K_train_LR_bicubic/X4",
+        image_dir="../dataset/DIV2K/LR/X4",
         transform=transform1,
         max_images=10
     )

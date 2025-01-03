@@ -9,7 +9,7 @@ def print_network(net):
     for param in net.parameters():
         num_params += param.numel()
     print(net)
-    print('total number of parameters: %.3f K' % (num_params / 1e3))
+    print('Total number of parameters: %.3f K' % (num_params / 1e3))
 
 
 def round_func(input):

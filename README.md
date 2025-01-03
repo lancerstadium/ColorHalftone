@@ -18,6 +18,7 @@
 10. [(2021)Practical Single-Image Super-Resolution Using Look-Up Table](https://openaccess.thecvf.com/content/CVPR2021/papers/Jo_Practical_Single-Image_Super-Resolution_Using_Look-Up_Table_CVPR_2021_paper.pdf)
 11. [(2024)REM: Enabling Real-time Neural-enhanced Video Streaming on Mobile Devices using Macroblock-Aware Lookup Table]()
 12. [(2024 BuXie)NILUT: Conditional Neural Implicit 3D Lookup Tables for Image Enhancement](https://arxiv.org/pdf/2306.11920)
+13. [On the Automatic Exploration of Weight Sharing for Deep Neural Network Compression](https://past.date-conference.com/proceedings-archive/2020/pdf/0973.pdf)
 
 [(Picture)EvalMuse-40K](https://shh-han.github.io/EvalMuse-project/)
 

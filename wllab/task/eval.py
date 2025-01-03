@@ -1,14 +1,10 @@
 import torch
 import torchvision
-from torch.utils.data import DataLoader
-from torchvision.transforms import ToTensor, Resize, Normalize, RandomCrop, CenterCrop, Grayscale
 import os
 import tqdm
 
 
-from ..network.lut import SRNet
-from ..network.ht import HalftoneNet
-from ..data.data import SingleDataset
+from ..metric.util import rgb_to_y
 from ..metric.normal import calculate_psnr, calculate_ssim
 
 
@@ -86,20 +82,23 @@ def evaluate_sr(model, pdataloader, load_path='./checkpoints/latest_model.pth', 
             i = i + 1
             for idx, file_name in enumerate(file_names[org_start:org_end]):
                 org_image = org[idx].cpu().permute(1, 2, 0).numpy()  # 转换为 (H, W, C)
-                out_image = out[idx].cpu().permute(1, 2, 0).numpy()  # 转换为 (H, W, C)\
+                out_image = out[idx].cpu().permute(1, 2, 0).numpy()  # 转换为 (H, W, C)
                 ref_image = ref[idx].cpu().permute(1, 2, 0).numpy()  # 转换为 (H, W, C)
 
                 # 保存图片
-                org_path = os.path.join(save_dir, f"org_{file_name}")
-                out_path = os.path.join(save_dir, f"out_{file_name}")
-                ref_path = os.path.join(save_dir, f"ref_{file_name}")
-                save_image(org[idx], org_path, is_in=True)
-                save_image(out[idx], out_path)
-                save_image(ref[idx], ref_path, is_in=True)
+                if save_dir:
+                    org_path = os.path.join(save_dir, f"org_{file_name}")
+                    out_path = os.path.join(save_dir, f"out_{file_name}")
+                    ref_path = os.path.join(save_dir, f"ref_{file_name}")
+                    save_image(org[idx], org_path, is_in=True)
+                    save_image(out[idx], out_path, is_in=True)
+                    save_image(ref[idx], ref_path, is_in=True)
 
                 # 计算 PSNR 和 SSIM
-                psnr_value = calculate_psnr(ref_image, out_image)
-                ssim_value = calculate_ssim(ref_image, out_image)
+                ref_y = rgb_to_y(ref_image)
+                out_y = rgb_to_y(out_image)
+                psnr_value = calculate_psnr(ref_y, out_y)
+                ssim_value = calculate_ssim(ref_y, out_y)
 
                 total_psnr += psnr_value
                 total_ssim += ssim_value
@@ -144,25 +143,25 @@ def evaluate_ht(model, dataloader, save_dir="./results"):
             org = org.to(device)  # 输入形状: [B, 3, H, W]
 
             # 前向传播
-            output, _, _ = model(org)  # 输出: [B, 3, H, W]
+            out, _, _ = model(org)  # 输出: [B, 3, H, W]
 
             # 保存原图和输出图
             org_start = i * dataloader.org_size
             org_end = min(org_start + org.size(0), len(file_names))
             i = i + 1
             for idx, file_name in enumerate(file_names[org_start:org_end]):
-                original_image = org[idx].cpu().permute(1, 2, 0).numpy()  # 转换为 (H, W, C)
-                output_image = output[idx].cpu().permute(1, 2, 0).numpy()  # 转换为 (H, W, C)\
+                org_image = org[idx].cpu().permute(1, 2, 0).numpy()  # 转换为 (H, W, C)
+                out_image = out[idx].cpu().permute(1, 2, 0).numpy()  # 转换为 (H, W, C)\
 
                 # 保存图片
-                original_path = os.path.join(save_dir, f"org_{file_name}")
-                output_path = os.path.join(save_dir, f"out_{file_name}")
-                save_image(org[idx], original_path, is_in=True)
-                save_image(output[idx], output_path)
+                org_path = os.path.join(save_dir, f"org_{file_name}")
+                out_path = os.path.join(save_dir, f"out_{file_name}")
+                save_image(org[idx], org_path, is_in=True)
+                save_image(out[idx], out_path)
 
                 # 计算 PSNR 和 SSIM
-                psnr_value = calculate_psnr(torch.tensor(original_image), torch.tensor(output_image))
-                ssim_value = calculate_ssim(original_image, output_image)
+                psnr_value = calculate_psnr(org_image, out_image)
+                ssim_value = calculate_ssim(org_image, out_image)
 
                 total_psnr += psnr_value
                 total_ssim += ssim_value

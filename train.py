@@ -2,7 +2,7 @@ import torchvision
 from torchvision.transforms import ToTensor, Resize, Normalize, RandomCrop, Grayscale, CenterCrop
 from torch.utils.data import DataLoader
 
-from wllab.network.lut import SRNet, SPF_LUT_net, MuLUT
+from wllab.network.lut import SRNet, SPF_LUT_net, MuLUT, BaseSRNets
 from wllab.network.ht import HalftoneNet
 from wllab.data.data import SingleDataset, PairedDataset
 from wllab.task.train import train_ht, train_sr
@@ -18,7 +18,7 @@ def TRAIN_HT():
 
     # 数据集
     idataset = SingleDataset(
-        image_dir="/home/lexer/item/DIV2K/DIV2K_train_LR_bicubic/X4",
+        image_dir="../dataset/DIV2K/LR/X4",
         transform=transform1,
         max_images=800
     )
@@ -49,19 +49,21 @@ def TRAIN_SR():
     ])
 
     pdataset = PairedDataset(
-        image_dir1="/home/lancer/item/DIV2K/LR/X4",
-        image_dir2="/home/lancer/item/DIV2K/HR",
+        image_dir1="../dataset/DIV2K/LR/X4",
+        image_dir2="../dataset/DIV2K/HR",
         transform1=transform,
         transform2=transform,
         max_images=800,
         crop_size=(48, 48),
-        upscale_factor=188/48,
+        upscale_factor=4,
         is_DIV2K=True
     )
     pdataloader = DataLoader(pdataset, batch_size=16, shuffle=False)
 
     # 初始化模型
-    model = SRNet(mode='SxN', nf=64, upscale=4, dense=True)
+    # model = SRNet(mode='SxN', nf=64, upscale=4, dense=True)
+    model = BaseSRNets(nf=64, scale=4, modes="sdy", stages=2)
+    
     # model = HalftoneNet(in_channels=3, num_classes=64, num_features=128, block_size=3, scale=4)
 
     # 开始训练

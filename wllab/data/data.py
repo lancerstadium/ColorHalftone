@@ -7,6 +7,9 @@ import numpy as np
 class SingleDataset(Dataset):
     '''
     单图数据集
+    :param image_dir: 图像文件夹路径
+    :param transform: 转换
+    :param max_images: 最大图像数量
     '''
     def __init__(self, image_dir, transform=None, max_images=None):
         self.image_dir = image_dir
@@ -27,6 +30,14 @@ class SingleDataset(Dataset):
 class PairedDataset(Dataset):
     '''
     成对数据集
+    :param image_dir1: 图像1的文件夹路径
+    :param image_dir2: 图像2的文件夹路径
+    :param transform1: 对图像1应用的变换
+    :param transform2: 对图像2应用的变换
+    :param max_images: 最大图像数量
+    :param crop_size: 裁剪尺寸(高度，宽度)
+    :param upscale_factor: 超分图像的放大因子
+    :param is_DIV2K: 是否使用DIV2K数据集
     '''
     def __init__(self, image_dir1, image_dir2, transform1=None, transform2=None, max_images=None, crop_size=(256, 256), upscale_factor=1, is_DIV2K=False):
         """
