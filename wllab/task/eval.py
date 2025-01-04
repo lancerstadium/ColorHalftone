@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 import torchvision
 import os
 import tqdm
@@ -41,7 +42,11 @@ def save_image(tensor, file_path, is_in=False):
 
 
 # 评估函数
-def evaluate_sr(model, pdataloader, load_path='./checkpoints/latest_model.pth', save_dir="./results"):
+def evaluate_sr(model, 
+    pdataloader, 
+    load_path='./checkpoints/latest_model.pth', 
+    save_dir="./results",
+    pad = 1):
     """
     模型评估函数，计算 PSNR 和 SSIM。
     Args:
@@ -72,6 +77,7 @@ def evaluate_sr(model, pdataloader, load_path='./checkpoints/latest_model.pth', 
         i = 0
         for org, ref in tqdm.tqdm(pdataloader, desc="Evaluating", total=len(pdataloader)):
             org = org.to(device)  # 输入形状: [B, 3, H, W]
+            org = F.pad(org, (0, pad, 0, pad), mode='replicate')
             ref = ref.to(device)
             # 前向传播
             out = model(org)  # 输出: [B, 3, H, W]

@@ -4,8 +4,8 @@ from torchvision.transforms import ToTensor, Resize, Normalize, RandomCrop, Gray
 from torch.utils.data import DataLoader
 from torchsummary import summary
 
-from wllab.network.lut import BaseSRNets, SPF_LUT_net, MuLUT, print_network
-from wllab.common.lut import lut_save, lut_load
+from wllab.network.lut import BaseSRNets, SPF_LUT_net, MuLUT, SRNet, print_network
+from wllab.common.lut import lut_save, lut_load, BaseLUT
 from wllab.data.data import SingleDataset, PairedDataset
 from wllab.task.eval import evaluate_sr, evaluate_ht
 
@@ -15,19 +15,24 @@ def model_summary(model):
 
 
 
+
 if __name__ == "__main__":
     import torch
     # 读入训练好的模型，并采样保存LUT
-    model = BaseSRNets(nf=64, scale=4, modes="sdy", stages=2)
+    # model = BaseSRNets(nf=64, scale=4, modes="sdy", stages=2)
+    model = SRNet(mode='SxN', nf=32, upscale=4, dense=True)
+    checkpoint = torch.load("./checkpoints/latest_model.pth")
+    model.load_state_dict(checkpoint["model_state_dict"])
     print_network(model)
-    lut_save(model, ['s', 'd', 'y'], 2, 8, 4, 4, 64, save_dir="./lut/")
+    lut_save(model, ['s', 'd', 'y'], 2, 8, 4, 4, save_dir="./lut/")
 
     # 新建MuLUT模型，加载LUT
-    model = MuLUT("./lut/", 2, ['s', 'd', 'y'], "x4_4b_i8", 4, 4)
-    lut_load(model, ['s', 'd', 'y'], 2, 8, 4, 4, 64, load_dir="./lut/")
-    ints = torch.rand(1, 1, 48, 48)
-    print(model(ints).shape)
-    print(model.weight_s1_s.shape)
+    # model = MuLUT("./lut/", 2, ['s', 'd', 'y'], "x4_4b_i8", 4, 4)
+    # lut_load(model, ['s', 'd', 'y'], 2, 8, 4, 4, load_dir="./lut/")
+    # model = BaseLUT('./lut', 2, ['s', 'd', 'y'], 8, 4, 4, phase='train')
+    # ints = torch.rand(1, 1, 48, 48)
+    # print(model(ints).shape)
+    # print(model.weight_s1_s.shape)
 
     # 数据预处理
     transform = torchvision.transforms.Compose([
@@ -43,10 +48,10 @@ if __name__ == "__main__":
         transform2=transform,
         max_images=10,
         crop_size=(48, 48),
-        upscale_factor=188/48,
+        upscale_factor=4,
         is_DIV2K=True
     )
     pdataloader = DataLoader(pdataset, batch_size=16, shuffle=False)
 
     # 开始评估
-    evaluate_sr(model, pdataloader=pdataloader, save_dir="./results")
+    evaluate_sr(model, load_path=None, pdataloader=pdataloader, save_dir="./results", pad = 1)

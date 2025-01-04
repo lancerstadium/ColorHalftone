@@ -1,5 +1,5 @@
 import torchvision
-from torchvision.transforms import ToTensor, Resize, Normalize, RandomCrop, Grayscale, CenterCrop
+from torchvision.transforms import ToTensor, Resize, Normalize, RandomCrop, Grayscale, CenterCrop, Pad
 from torch.utils.data import DataLoader
 
 from wllab.network.lut import SRNet, SPF_LUT_net, MuLUT, BaseSRNets
@@ -42,7 +42,14 @@ def TRAIN_HT():
 
 def TRAIN_SR():
     # 数据预处理
-    transform = torchvision.transforms.Compose([
+    transform1 = torchvision.transforms.Compose([
+        # Grayscale(num_output_channels=1),  # 灰度化为单通道
+        ToTensor(),  # 转换为Tensor
+        Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),  # 使用标准 ImageNet 均值和标准差
+        # Pad([0,0,1,1], fill=0, padding_mode='reflect')
+    ])
+
+    transform2 = torchvision.transforms.Compose([
         # Grayscale(num_output_channels=1),  # 灰度化为单通道
         ToTensor(),  # 转换为Tensor
         Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # 使用标准 ImageNet 均值和标准差
@@ -51,8 +58,8 @@ def TRAIN_SR():
     pdataset = PairedDataset(
         image_dir1="../dataset/DIV2K/LR/X4",
         image_dir2="../dataset/DIV2K/HR",
-        transform1=transform,
-        transform2=transform,
+        transform1=transform1,
+        transform2=transform2,
         max_images=800,
         crop_size=(48, 48),
         upscale_factor=4,
@@ -61,8 +68,8 @@ def TRAIN_SR():
     pdataloader = DataLoader(pdataset, batch_size=16, shuffle=False)
 
     # 初始化模型
-    # model = SRNet(mode='SxN', nf=64, upscale=4, dense=True)
-    model = BaseSRNets(nf=64, scale=4, modes="sdy", stages=2)
+    model = SRNet(mode='SxN', nf=32, upscale=4, dense=True)
+    # model = BaseSRNets(nf=64, scale=4, modes="sdy", stages=2)
     
     # model = HalftoneNet(in_channels=3, num_classes=64, num_features=128, block_size=3, scale=4)
 
@@ -71,9 +78,11 @@ def TRAIN_SR():
         model=model,
         pdataloader=pdataloader,
         load_path=None,
-        num_epochs=200,
+        num_epochs=8000,
         lr=1e-5,
-        save_path="./checkpoints"
+        save_path="./checkpoints",
+        is_self_ensemble=True,
+        pad=1
     )
 
 
