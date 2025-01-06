@@ -194,7 +194,7 @@ def train_sr(
 
 
 
-def finetune_sr_lut(model, 
+def finetune_lut_sr(model, 
             pdataloader=None,
             vdataloader=None,
             load_path=None,
@@ -202,19 +202,19 @@ def finetune_sr_lut(model,
             val_epochs=10,
             modes: list = ['s', 'd', 'y'], 
             stages: int = 2, 
-            bitwith: int = 8, 
+            bitwidth: int = 8, 
             interval: int = 4, 
             upscale : int = 4, 
-            compressed_dim: str = "xyzt", 
-            diagonal_with: int = 2, 
-            sampling_interval: int = 5, 
             optim: torch.optim.Optimizer = torch.optim.Adam, 
             lr0: float = 1e-3, 
             lr1: float = 1e-4,
             betas: tuple = (0.9, 0.999), 
             eps: float = 1e-8, 
             weight_decay: float = 0,
-            save_path="./lut"):
+            save_path="./checkpoint",
+            lut_dir="./lut",
+            is_self_ensemble = False,
+            pad = 1):
     # 初始化优化器
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
@@ -224,7 +224,13 @@ def finetune_sr_lut(model,
     params = list(filter(lambda p: p.requires_grad, model.parameters()))
     optimizer = optim(params, lr=lr0, betas=betas, eps=eps, weight_decay=weight_decay)
 
-    # 微调
+    # 初始化调度器
+
+    # 创建保存路径
+    os.makedirs(save_path, exist_ok=True)
+    latest_model_path = os.path.join(save_path, "latest_model.pth")
+
+    # 微调模型
     for epoch in range(num_epochs):
         model.train()
         epoch_loss = 0.0
@@ -234,28 +240,63 @@ def finetune_sr_lut(model,
             for org, ref in pdataloader:
                 org = org.to(device)  # 将输入移到相同的设备上
                 ref = ref.to(device)
-                # 前向传播
-                out = model(org).to(device)
-                # 1. 重建损失（感知损失 + MSE）
-                recon_loss = F.mse_loss(out, ref) 
+                recon_loss = 0.0
+                if is_self_ensemble:
+                    # 自集成训练
+                    for i in range(4):
+                        # 前向传播
+                        orx = F.pad(torch.rot90(org, i, [2, 3]), (0, pad, 0, pad), mode='replicate').to(device)
+                        out = model(orx).to(device)
+                        out = torch.rot90(out, -i, [2, 3]).to(device)
+                        # 1. 重建损失（感知损失 + MSE）
+                        recon_loss += F.mse_loss(out, ref)
+                    recon_loss /= 4
+                else:
+                    # 前向传播
+                    org = F.pad(org, (0, pad, 0, pad), mode='replicate')
+                    out = model(org).to(device)
+                    # 1. 重建损失（感知损失 + MSE）
+                    recon_loss = F.mse_loss(out, ref) 
+                
                 # 总损失
                 loss = recon_loss
-
                 # 梯度清零，反向传播，优化
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
                 epoch_loss += loss.item()
-        
+
+                # 更新 tqdm 显示
+                pbar.set_postfix({
+                    "recon": f"{recon_loss.item():.4f}",
+                    "total": f"{loss.item():.4f}"
+                })
+                pbar.update(1)
+
+        # 平均损失
+        avg_loss = epoch_loss / len(pdataloader)
+        print(f"Epoch [{epoch + 1}/{num_epochs}] completed. Average Loss: {avg_loss:.4f}")
+
+        # 保存模型
+        checkpoint = {
+            "epoch": epoch + 1,
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "loss": avg_loss
+        }
+        torch.save(checkpoint, latest_model_path)
+        print(f"Model saved: {latest_model_path}")
+
         # 验证
         if (epoch + 1) % val_epochs == 0:
-            evaluate_sr(model, vdataloader, load_path=None)
+            evaluate_sr(model, vdataloader, load_path=None, pad=pad)
+
     # 保存模型的 LUT
     for s in stages:
         stage = s + 1
-        for m in modes:
-            ft_lut_path = os.path.join(save_path, f"x{upscale}_{interval}b_i8_s{stage}_{m}.npy")
-            ft_lut_weight = np.round(np.clip(getattr(model, f"weight_s{stage}_{m}").cpu().detach().numpy(), -1, 1) * 127).astype(np.int8)
+        for mode in modes:
+            ft_lut_path = os.path.join(lut_dir, f"x{upscale}_{interval}b_i{bitwidth}_s{stage}_{mode}.npy")
+            ft_lut_weight = np.round(np.clip(getattr(model, f"weight_s{stage}_{mode}").cpu().detach().numpy(), -1, 1) * 127).astype(np.int8)
             np.save(ft_lut_path, ft_lut_weight)
             print(f"Finetuned LUT saved: {ft_lut_path}")
     

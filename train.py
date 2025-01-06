@@ -68,7 +68,7 @@ def TRAIN_SR():
     pdataloader = DataLoader(pdataset, batch_size=16, shuffle=False)
 
     # 初始化模型
-    model = SRNet(mode='SxN', nf=32, upscale=4, dense=True)
+    model = SRNet(mode='SxN', nf=64, upscale=4, dense=True)
     # model = BaseSRNets(nf=64, scale=4, modes="sdy", stages=2)
     
     # model = HalftoneNet(in_channels=3, num_classes=64, num_features=128, block_size=3, scale=4)
@@ -78,7 +78,7 @@ def TRAIN_SR():
         model=model,
         pdataloader=pdataloader,
         load_path=None,
-        num_epochs=8000,
+        num_epochs=2000,
         lr=1e-5,
         save_path="./checkpoints",
         is_self_ensemble=True,
