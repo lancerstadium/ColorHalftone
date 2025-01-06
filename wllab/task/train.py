@@ -211,7 +211,6 @@ def finetune_lut_sr(model,
             betas: tuple = (0.9, 0.999), 
             eps: float = 1e-8, 
             weight_decay: float = 0,
-            save_path="./checkpoint",
             lut_dir="./lut",
             is_self_ensemble = False,
             pad = 1):
@@ -225,10 +224,6 @@ def finetune_lut_sr(model,
     optimizer = optim(params, lr=lr0, betas=betas, eps=eps, weight_decay=weight_decay)
 
     # 初始化调度器
-
-    # 创建保存路径
-    os.makedirs(save_path, exist_ok=True)
-    latest_model_path = os.path.join(save_path, "latest_model.pth")
 
     # 微调模型
     for epoch in range(num_epochs):
@@ -276,16 +271,6 @@ def finetune_lut_sr(model,
         # 平均损失
         avg_loss = epoch_loss / len(pdataloader)
         print(f"Epoch [{epoch + 1}/{num_epochs}] completed. Average Loss: {avg_loss:.4f}")
-
-        # 保存模型
-        checkpoint = {
-            "epoch": epoch + 1,
-            "model_state_dict": model.state_dict(),
-            "optimizer_state_dict": optimizer.state_dict(),
-            "loss": avg_loss
-        }
-        torch.save(checkpoint, latest_model_path)
-        print(f"Model saved: {latest_model_path}")
 
         # 验证
         if (epoch + 1) % val_epochs == 0:

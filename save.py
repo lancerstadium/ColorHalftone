@@ -28,9 +28,8 @@ if __name__ == "__main__":
 
 
     # 新建MuLUT模型，加载LUT
-    # model = MuLUT("./lut/", 2, ['s', 'd', 'y'], "x4_4b_i8", 4, 4)
-    # lut_load(model, ['s', 'd', 'y'], 2, 8, 4, 4, load_dir="./lut/")
-    model = BaseLUT(None, 2, ['s', 'd', 'y'], 8, 4, 4)
+    model = MuLUT("./lut/", 2, ['s', 'd', 'y'], "x4_4b_i8", 4, 4)
+    # model = BaseLUT(None, 2, ['s', 'd', 'y'], 8, 4, 4)
     lut_load(model, ['s', 'd', 'y'], 2, 8, 4, 4, './lut')
     # lut_load(model, ['s', 'd', 'y'], 2, 8, 4, 4, './lut', '', '_c1')
     # lut_load(model, ['s', 'd', 'y'], 2, 8, 4, 4, './lut', '', '_c2')
@@ -58,12 +57,23 @@ if __name__ == "__main__":
     )
     pdataloader = DataLoader(pdataset, batch_size=16, shuffle=False)
 
+    vdataset = PairedDataset(
+        image_dir1="../dataset/DIV2K/LR/X4",
+        image_dir2="../dataset/DIV2K/HR",
+        transform1=transform,
+        transform2=transform,
+        max_images=20,
+        crop_size=(48, 48),
+        upscale_factor=4,
+        is_DIV2K=True
+    )
+    vdataloader = DataLoader(vdataset, batch_size=16, shuffle=False)
 
     # 微调评估模型
     finetune_lut_sr(
         model, 
         pdataloader, 
-        pdataloader, 
+        vdataloader, 
         None, 
         200, 
         10, 
@@ -78,7 +88,6 @@ if __name__ == "__main__":
         (0.9,0.999),
         1e-8,
         0,
-        './checkpoints',
         './lut',
         False,
         0

@@ -4,6 +4,7 @@ model_epoch_*
 *.aux
 *.bbl
 *.blg
+*.pgf
 *.out
 *.npy
 *.synctex.gz
