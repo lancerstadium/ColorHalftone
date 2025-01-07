@@ -21,7 +21,7 @@ def save_image(tensor, file_path, is_norm=False, mean=[0.485, 0.456, 0.406], std
     """
 
     device = tensor.device  # 获取 tensor 的设备
-    print(tensor)
+    # print(tensor)
     if is_norm:
         # 将 mean 和 std 移动到 tensor 所在的设备
         mean = torch.tensor(mean).to(device).view(-1, 1, 1)
