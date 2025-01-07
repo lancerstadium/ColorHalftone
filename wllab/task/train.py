@@ -1,5 +1,6 @@
 import os
 import tqdm
+import math
 
 import torch
 import torch.optim as optim
@@ -224,6 +225,14 @@ def finetune_lut_sr(model,
     optimizer = optim(params, lr=lr0, betas=betas, eps=eps, weight_decay=weight_decay)
 
     # 初始化调度器
+    totalIter = num_epochs * pdataloader.batch_size
+    if lr1 < 0:
+        lf = lambda x: (((1 + math.cos(x * math.pi / totalIter)) / 2) ** 1.0) * 0.8 + 0.2
+    else:
+        lr_b = lr1 / lr0
+        lr_a = 1 - lr_b
+        lf = lambda x: (((1 + math.cos(x * math.pi / totalIter)) / 2) ** 1.0) * lr_a + lr_b
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lf)
 
     # 微调模型
     for epoch in range(num_epochs):
@@ -259,6 +268,7 @@ def finetune_lut_sr(model,
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
+                scheduler.step()
                 epoch_loss += loss.item()
 
                 # 更新 tqdm 显示
