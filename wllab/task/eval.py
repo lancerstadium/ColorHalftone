@@ -10,7 +10,7 @@ from ..metric.normal import calculate_psnr, calculate_ssim
 
 
 # 保存图片函数
-def save_image(tensor, file_path, is_in=False):
+def save_image(tensor, file_path, is_norm=False, mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]):
     """
     将 Tensor 图像保存为文件。
     Args:
@@ -21,11 +21,9 @@ def save_image(tensor, file_path, is_in=False):
     """
 
     device = tensor.device  # 获取 tensor 的设备
-    #print(tensor)
-    if is_in:
+    print(tensor)
+    if is_norm:
         # 将 mean 和 std 移动到 tensor 所在的设备
-        mean=[0.485, 0.456, 0.406]
-        std=[0.229, 0.224, 0.225]
         mean = torch.tensor(mean).to(device).view(-1, 1, 1)
         std = torch.tensor(std).to(device).view(-1, 1, 1)
         # 反标准化
@@ -96,9 +94,9 @@ def evaluate_sr(model,
                     org_path = os.path.join(save_dir, f"org_{file_name}")
                     out_path = os.path.join(save_dir, f"out_{file_name}")
                     ref_path = os.path.join(save_dir, f"ref_{file_name}")
-                    save_image(org[idx], org_path, is_in=True)
-                    save_image(out[idx], out_path, is_in=True)
-                    save_image(ref[idx], ref_path, is_in=True)
+                    save_image(org[idx], org_path, is_norm=False)
+                    save_image(out[idx], out_path, is_norm=False)
+                    save_image(ref[idx], ref_path, is_norm=False)
 
                 # 计算 PSNR 和 SSIM
                 ref_y = rgb_to_y(ref_image)
@@ -176,7 +174,7 @@ def evaluate_st(model,
                     # 保存图片
                     if save_dir:
                         out_path = os.path.join(save_dir, f"out_{file_name}_{style_name}")
-                        save_image(out[idx], out_path, is_in=True)
+                        save_image(out[idx], out_path, is_norm=True)
 
                     # 计算 PSNR 和 SSIM
                     org_y = rgb_to_y(org_image)
@@ -239,7 +237,7 @@ def evaluate_ht(model, dataloader, save_dir="./results"):
                 # 保存图片
                 org_path = os.path.join(save_dir, f"org_{file_name}")
                 out_path = os.path.join(save_dir, f"out_{file_name}")
-                save_image(org[idx], org_path, is_in=True)
+                save_image(org[idx], org_path, is_norm=True)
                 save_image(out[idx], out_path)
 
                 # 计算 PSNR 和 SSIM

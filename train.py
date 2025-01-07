@@ -45,14 +45,14 @@ def TRAIN_SR():
     transform1 = torchvision.transforms.Compose([
         # Grayscale(num_output_channels=1),  # 灰度化为单通道
         ToTensor(),  # 转换为Tensor
-        Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),  # 使用标准 ImageNet 均值和标准差
+        # Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),  # 使用标准 ImageNet 均值和标准差
         # Pad([0,0,1,1], fill=0, padding_mode='reflect')
     ])
 
     transform2 = torchvision.transforms.Compose([
         # Grayscale(num_output_channels=1),  # 灰度化为单通道
         ToTensor(),  # 转换为Tensor
-        Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # 使用标准 ImageNet 均值和标准差
+        # Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # 使用标准 ImageNet 均值和标准差
     ])
 
     pdataset = PairedDataset(

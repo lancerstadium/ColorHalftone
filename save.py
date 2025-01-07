@@ -42,7 +42,7 @@ if __name__ == "__main__":
     transform = torchvision.transforms.Compose([
         # Grayscale(num_output_channels=1),  # 灰度化为单通道
         ToTensor(),  # 转换为Tensor
-        Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # 使用标准 ImageNet 均值和标准差
+        # Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # 使用标准 ImageNet 均值和标准差
     ])
 
     pdataset = PairedDataset(
@@ -62,34 +62,43 @@ if __name__ == "__main__":
         image_dir2="../dataset/DIV2K/HR",
         transform1=transform,
         transform2=transform,
-        max_images=20,
+        max_images=10,
         crop_size=(48, 48),
         upscale_factor=4,
         is_DIV2K=True
     )
     vdataloader = DataLoader(vdataset, batch_size=16, shuffle=False)
 
-    # 微调评估模型
-    finetune_lut_sr(
-        model, 
-        pdataloader, 
-        vdataloader, 
-        None, 
-        200, 
-        10, 
-        ['s', 'd', 'y'],
-        2,
-        8,
-        4,
-        4,
-        torch.optim.Adam,
-        0.001,
-        0.0001,
-        (0.9,0.999),
-        1e-8,
-        0,
-        './lut',
-        False,
+
+    evaluate_sr(
+        model,
+        vdataloader,
+        None,
+        'results',
         0
     )
+
+    # 微调并评估模型
+    # finetune_lut_sr(
+    #     model, 
+    #     pdataloader, 
+    #     vdataloader, 
+    #     None, 
+    #     200, 
+    #     10, 
+    #     ['s', 'd', 'y'],
+    #     2,
+    #     8,
+    #     4,
+    #     4,
+    #     torch.optim.Adam,
+    #     0.001,
+    #     0.0001,
+    #     (0.9,0.999),
+    #     1e-8,
+    #     0,
+    #     './lut',
+    #     False,
+    #     0
+    # )
     
