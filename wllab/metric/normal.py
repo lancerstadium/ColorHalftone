@@ -29,12 +29,15 @@ def calculate_ssim(image1, image2) -> float:
     """
     # 确保输入图像具有相同的形状 
     assert image1.shape == image2.shape, "输入图像形状必须相同" 
-    # 初始化SSIM值 
-    ssim_total = 0.0 
-    # 逐通道计算SSIM，并求平均 
-    for i in range(image1.shape[2]):
-        ssim_value, _ = ssim(image1[:, :, i], image2[:, :, i], full=True) 
-        ssim_total += ssim_value 
     
-    ssim_avg = ssim_total / image1.shape[2] 
+    # 逐通道计算SSIM，并求平均 
+    if len(image1.shape) == 3:
+        ssim_total = 0.0 
+        for i in range(image1.shape[2]):
+            ssim_value, _ = ssim(image1[:, :, i], image2[:, :, i], full=True) 
+            ssim_total += ssim_value 
+        ssim_avg = ssim_total / image1.shape[2] 
+    else:
+        ssim_avg, _ = ssim(image1[:, :, i], image2[:, :, i], full=True) 
+    
     return ssim_avg
