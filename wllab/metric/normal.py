@@ -38,6 +38,6 @@ def calculate_ssim(image1, image2) -> float:
             ssim_total += ssim_value 
         ssim_avg = ssim_total / image1.shape[2] 
     else:
-        ssim_avg, _ = ssim(image1[:, :, i], image2[:, :, i], full=True) 
+        ssim_avg, _ = ssim(image1, image2, full=True) 
     
     return ssim_avg
