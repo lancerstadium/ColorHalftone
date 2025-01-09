@@ -18,7 +18,7 @@ def calculate_psnr(original, generated) -> float:
     return 20 * np.log10(1.0 / np.sqrt(mse))
 
 
-def calculate_ssim(image1, image2) -> float:
+def calculate_ssim(image1, image2, data_range=255.0) -> float:
     """ '
     计算两幅彩色图像的结构相似性指数（SSIM）。 
     参数: 
@@ -34,10 +34,10 @@ def calculate_ssim(image1, image2) -> float:
     if len(image1.shape) == 3:
         ssim_total = 0.0 
         for i in range(image1.shape[2]):
-            ssim_value, _ = ssim(image1[:, :, i], image2[:, :, i], full=True) 
+            ssim_value, _ = ssim(image1[:, :, i], image2[:, :, i], full=True, data_range=data_range) 
             ssim_total += ssim_value 
         ssim_avg = ssim_total / image1.shape[2] 
     else:
-        ssim_avg, _ = ssim(image1, image2, full=True) 
+        ssim_avg, _ = ssim(image1, image2, full=True, data_range=data_range) 
     
     return ssim_avg
