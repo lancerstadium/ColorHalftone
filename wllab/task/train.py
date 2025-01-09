@@ -286,13 +286,13 @@ def finetune_lut_sr(model,
         if (epoch + 1) % val_epochs == 0:
             evaluate_sr(model, vdataloader, load_path=None, pad=pad)
 
-    # 保存模型的 LUT
-    for s in stages:
-        stage = s + 1
-        for mode in modes:
-            ft_lut_path = os.path.join(lut_dir, f"x{upscale}_{interval}b_i{bitwidth}_s{stage}_{mode}.npy")
-            ft_lut_weight = np.round(np.clip(getattr(model, f"weight_s{stage}_{mode}").cpu().detach().numpy(), -1, 1) * 127).astype(np.int8)
-            np.save(ft_lut_path, ft_lut_weight)
-            print(f"Finetuned LUT saved: {ft_lut_path}")
+            # 保存模型的 LUT
+            for s in range(stages):
+                stage = s + 1
+                for mode in modes:
+                    ft_lut_path = os.path.join(lut_dir, f"x{upscale}_{interval}b_i{bitwidth}_s{stage}_{mode}.npy")
+                    ft_lut_weight = np.round(np.clip(getattr(model, f"weight_s{stage}_{mode}").cpu().detach().numpy(), -1, 1) * 127).astype(np.int8)
+                    np.save(ft_lut_path, ft_lut_weight)
+                    print(f"Finetuned LUT saved: {ft_lut_path}")
     
     print(f"Finetuning completed. Average Loss: {epoch_loss:.4f}")

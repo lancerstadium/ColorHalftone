@@ -70,35 +70,35 @@ if __name__ == "__main__":
     vdataloader = DataLoader(vdataset, batch_size=16, shuffle=False)
 
 
-    # evaluate_sr(
-    #     model,
-    #     vdataloader,
-    #     None,
-    #     'results',
-    #     0
-    # )
-
-    # 微调并评估模型
-    finetune_lut_sr(
-        model, 
-        pdataloader, 
-        vdataloader, 
-        None, 
-        200, 
-        10, 
-        ['s', 'd', 'y'],
-        2,
-        8,
-        4,
-        4,
-        torch.optim.Adam,
-        0.001,
-        0.0001,
-        (0.9,0.999),
-        1e-8,
-        0,
-        './lut',
-        False,
+    evaluate_sr(
+        model,
+        vdataloader,
+        None,
+        'results',
         0
     )
+
+    # 微调并评估模型
+    # finetune_lut_sr(
+    #     model, 
+    #     pdataloader, 
+    #     vdataloader, 
+    #     None, 
+    #     200, 
+    #     10, 
+    #     ['s', 'd', 'y'],
+    #     2,
+    #     8,
+    #     4,
+    #     4,
+    #     torch.optim.Adam,
+    #     0.001,
+    #     0.0001,
+    #     (0.9,0.999),
+    #     1e-8,
+    #     0,
+    #     './lut',
+    #     False,
+    #     0
+    # )
     
