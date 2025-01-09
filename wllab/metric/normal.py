@@ -18,7 +18,7 @@ def calculate_psnr(original, generated) -> float:
     return 20 * np.log10(1.0 / np.sqrt(mse))
 
 
-def calculate_ssim(image1, image2, data_range=255.0) -> float:
+def calculate_ssim(image1, image2, data_range=1.0) -> float:
     """ '
     计算两幅彩色图像的结构相似性指数（SSIM）。 
     参数: 
