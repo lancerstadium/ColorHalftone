@@ -58,25 +58,34 @@ def EVAL_LUT_SR():
         # Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # 使用标准 ImageNet 均值和标准差
     ])
 
-    vdataset = PairedDataset(
-        image_dir1="../dataset/DIV2K/LR/X4",
-        image_dir2="../dataset/DIV2K/HR",
-        transform1=transform,
-        transform2=transform,
-        max_images=10,
-        crop_size=(48, 48),
-        upscale_factor=4,
-        is_DIV2K=True
-    )
-    vdataloader = DataLoader(vdataset, batch_size=16, shuffle=False)
+    vdict = {
+        'Set5'      : 5,
+        'Set14'     : 14,
+        'Urban100'  : 100,
+        'BSD100'    : 100,
+        'Manga109'  : 104
+    }
 
-    evaluate_sr(
-        model,
-        vdataloader,
-        None,
-        'results',
-        0
-    )
+    for k, v in vdict.items():
+
+        vdataset = PairedDataset(
+            image_dir1=f"../dataset/{k}/LR/X4",
+            image_dir2=f"../dataset/{k}/HR",
+            transform1=transform,
+            transform2=transform,
+            max_images=v,
+            upscale_factor=4,
+            is_crop=False
+        )
+        vdataloader = DataLoader(vdataset, batch_size=1, shuffle=False)
+
+        evaluate_sr(
+            model,
+            vdataloader,
+            None,
+            f'./results/{k}',
+            0
+        )
 
 
 def EVAL_ST():
