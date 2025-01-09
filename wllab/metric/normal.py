@@ -1,5 +1,5 @@
 import numpy as np
-
+from skimage.metrics import structural_similarity as ssim
 
 
 # 计算 PSNR
@@ -18,30 +18,23 @@ def calculate_psnr(original, generated) -> float:
     return 20 * np.log10(1.0 / np.sqrt(mse))
 
 
-def calculate_ssim(original, generated) -> float:
+def calculate_ssim(image1, image2) -> float:
+    """ '
+    计算两幅彩色图像的结构相似性指数（SSIM）。 
+    参数: 
+        image1 (np.ndarray): 第一幅图像，应该是彩色图像 (H, W, C)。 
+        image2 (np.ndarray): 第二幅图像，应该是彩色图像 (H, W, C)。 
+    返回: 
+        float: 两幅图像之间的平均SSIM值。 
     """
-    计算 SSIM（结构相似性）。 numpy 版本
-    Args:
-        original: 原图像，形状为 (H, W, C)，范围 [0, 1]
-        generated: 生成图像，形状为 (H, W, C)，范围 [0, 1]
-    Returns:
-        ssim_value: SSIM 值
-    """
-    K1 = 0.01
-    K2 = 0.03
-    L = 1  # 像素值范围 [0, L]
-    C1 = (K1 * L) ** 2
-    C2 = (K2 * L) ** 2
-
-    original = original.astype(np.float64)
-    generated = generated.astype(np.float64)
-    cov = np.cov(original.flatten(), generated.flatten(), bias=True)
-    mean_original = np.mean(original)
-    mean_generated = np.mean(generated)
-    var_original = np.var(original)
-    var_generated = np.var(generated)
-
-    numerator = (2 * mean_original * mean_generated + C1) * (2 * cov[0, 1] + C2)
-    denominator = (mean_original ** 2 + mean_generated ** 2 + C1) * (var_original + var_generated + C2)
-    ssim_value = numerator / denominator
-    return ssim_value
+    # 确保输入图像具有相同的形状 
+    assert image1.shape == image2.shape, "输入图像形状必须相同" 
+    # 初始化SSIM值 
+    ssim_total = 0.0 
+    # 逐通道计算SSIM，并求平均 
+    for i in range(image1.shape[2]):
+        ssim_value, _ = ssim(image1[:, :, i], image2[:, :, i], full=True) 
+        ssim_total += ssim_value 
+    
+    ssim_avg = ssim_total / image1.shape[2] 
+    return ssim_avg

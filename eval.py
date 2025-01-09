@@ -61,8 +61,8 @@ def EVAL_LUT_SR():
     vdict = {
         'Set5'      : 5,
         'Set14'     : 14,
-        'Urban100'  : 100,
         'BSD100'    : 100,
+        'Urban100'  : 100,
         'Manga109'  : 104
     }
 
