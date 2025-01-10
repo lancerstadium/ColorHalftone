@@ -6,5 +6,5 @@ model_epoch_*
 *.blg
 *.pgf
 *.out
-*.npy
+lut/*.npy
 *.synctex.gz

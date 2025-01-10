@@ -21,14 +21,14 @@ if __name__ == "__main__":
     # 读入训练好的模型，并采样保存LUT
     # model = BaseSRNets(nf=64, scale=4, modes="sdy", stages=2)
     model = SRNet(mode='SxN', nf=64, upscale=4, dense=True)
-    checkpoint = torch.load("./checkpoints/latest_model.pth")
+    checkpoint = torch.load("./checkpoints/SRNet_x4_f64.pth")
     model.load_state_dict(checkpoint["model_state_dict"])
     lut_save(model, ['s', 'd', 'y'], 2, 8, 4, 4, save_dir='./lut')
     # lut_compress(model, ['s', 'd', 'y'], 2, 8, 4, 4, 'xyzt', 2, 5, './lut')
 
 
     # 新建MuLUT模型，加载LUT
-    model = MuLUT("./lut/", 2, ['s', 'd', 'y'], "x4_4b_i8", 4, 4)
+    model = MuLUT("./lut", 2, ['s', 'd', 'y'], "x4_4b_i8", 4, 4)
     # model = BaseLUT(None, 2, ['s', 'd', 'y'], 8, 4, 4)
     lut_load(model, ['s', 'd', 'y'], 2, 8, 4, 4, './lut')
     # lut_load(model, ['s', 'd', 'y'], 2, 8, 4, 4, './lut', '', '_c1')
@@ -97,7 +97,7 @@ if __name__ == "__main__":
     #     (0.9,0.999),
     #     1e-8,
     #     0,
-    #     './lut',
+    #     './lut/MuLUT',
     #     False,
     #     0
     # )

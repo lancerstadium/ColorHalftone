@@ -19,6 +19,7 @@
 11. [(2024)REM: Enabling Real-time Neural-enhanced Video Streaming on Mobile Devices using Macroblock-Aware Lookup Table]()
 12. [(2024 BuXie)NILUT: Conditional Neural Implicit 3D Lookup Tables for Image Enhancement](https://arxiv.org/pdf/2306.11920)
 13. [On the Automatic Exploration of Weight Sharing for Deep Neural Network Compression](https://past.date-conference.com/proceedings-archive/2020/pdf/0973.pdf)
+14. [(2024)Look-Up Table Compression for Efficient Image Restoration](https://openaccess.thecvf.com/content/CVPR2024/papers/Li_Look-Up_Table_Compression_for_Efficient_Image_Restoration_CVPR_2024_paper.pdf)
 
 [(Picture)EvalMuse-40K](https://shh-han.github.io/EvalMuse-project/)
 
