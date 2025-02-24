@@ -1,4 +1,4 @@
-
+import torch
 import torch.optim
 import torchvision
 from torchvision.transforms import ToTensor, Resize, Normalize, RandomCrop, Grayscale, CenterCrop
@@ -10,14 +10,13 @@ from wllab.common.lut import lut_save, lut_load, lut_compress, BaseLUT
 from wllab.data.data import SingleDataset, PairedDataset
 from wllab.task.train import finetune_lut_sr
 from wllab.task.eval import evaluate_sr, evaluate_ht
+from wllab.common.util import convert_npy_to_bin
 
 def model_summary(model):
     summary(model, (1, 48, 48))
 
 
-
-if __name__ == "__main__":
-    import torch
+def LUT_SAVE_SR():
     # 读入训练好的模型，并采样保存LUT
     # model = BaseSRNets(nf=64, scale=4, modes="sdy", stages=2)
     model = SRNet(mode='SxN', nf=64, upscale=4, dense=True)
@@ -101,4 +100,28 @@ if __name__ == "__main__":
     #     False,
     #     0
     # )
+
+
+
+
+def CONVERT_LUT_SR():
+    # 调用convert_npy_to_bin进行转换
+    # convert_npy_to_bin("./lut/MuLUT/x4_4b_i8_s1_s.npy")
+    # convert_npy_to_bin("./lut/MuLUT/x4_4b_i8_s1_d.npy")
+    # convert_npy_to_bin("./lut/MuLUT/x4_4b_i8_s1_y.npy")
+    # convert_npy_to_bin("./lut/MuLUT/x4_4b_i8_s2_s.npy")
+    # convert_npy_to_bin("./lut/MuLUT/x4_4b_i8_s2_d.npy")
+    # convert_npy_to_bin("./lut/MuLUT/x4_4b_i8_s2_y.npy")
+    convert_npy_to_bin("./lut/TinyLUT/x4_4b_i8_s1_D_H6.npy")
+    convert_npy_to_bin("./lut/TinyLUT/x4_4b_i8_s1_D_L2.npy")
+    convert_npy_to_bin("./lut/TinyLUT/x4_4b_i8_s2_P_H6.npy")
+    convert_npy_to_bin("./lut/TinyLUT/x4_4b_i8_s2_P_L2.npy")
+    convert_npy_to_bin("./lut/TinyLUT/x4_4b_i8_s3_U_H6.npy")
+    convert_npy_to_bin("./lut/TinyLUT/x4_4b_i8_s3_U_L2.npy")
+
+
+
+if __name__ == "__main__":
+    CONVERT_LUT_SR()
+
     

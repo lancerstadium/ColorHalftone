@@ -8,7 +8,7 @@ from wllab.network.lut import SRNet, SPF_LUT_net, MuLUT
 from wllab.network.ed import EnDeNet
 from wllab.network.ht import HalftoneNet
 from wllab.data.data import SingleDataset, PairedDataset
-from wllab.task.eval import evaluate_sr, evaluate_st, evaluate_ht
+from wllab.task.eval import evaluate_sr, evaluate_st, evaluate_ht, save_image
 
 
 
@@ -87,6 +87,35 @@ def EVAL_LUT_SR():
             0
         )
 
+def EVAL_LUT_SR1():
+    # 新建MuLUT模型，加载LUT
+    model = MuLUT("./lut/MuLUT", 2, ['s', 'd', 'y'], "x4_4b_i8", 4, 4)
+    # lut_load(model, ['s', 'd', 'y'], 2, 8, 4, 4, './lut')
+
+    ints = torch.rand(1, 1, 48, 48)
+    # print(model.weight_s1_s[0:4])
+    # print(model(ints).shape)
+
+    # 数据预处理
+    transform = torchvision.transforms.Compose([
+        ToTensor(),  # 转换为Tensor
+    ])
+
+    vdataset = SingleDataset(
+        image_dir=f"./test/org",
+        transform=transform,
+        max_images=10
+    )
+    vdataloader = DataLoader(vdataset, batch_size=1, shuffle=False)
+    model.eval()
+
+    # 开始评估
+    for i, org in enumerate(vdataloader):
+        out = model(org)
+        img = vdataset.image_files[i]
+        print(f"Saving {img}:")
+        save_image(out[0,:,:,:], f"./test/py/{img}")
+
 
 def EVAL_ST():
     # 数据预处理
@@ -121,8 +150,8 @@ def EVAL_ST():
 
     # 开始评估
     evaluate_st(model, cdataloader=cdataloader, sdataloader=sdataloader, save_dir="./results")
-
-
+    
+    
 
 
 def EVAL_HT():
@@ -153,5 +182,5 @@ def EVAL_HT():
 
 # 主函数
 if __name__ == "__main__":
-    EVAL_LUT_SR()
+    EVAL_LUT_SR1()
 

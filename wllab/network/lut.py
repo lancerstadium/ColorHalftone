@@ -10,6 +10,9 @@ from ..common.network import *
 mode_pad_dict = {"s": 1, "d": 2, "y": 2, "e": 3, "h": 3, "o": 3}
 
 
+
+
+
 def round_func(input):
     # Backward Pass Differentiable Approximation (BPDA)
     # This is equivalent to replacing round function (non-differentiable)
@@ -356,10 +359,15 @@ class MuLUT(nn.Module):
                         self.InterpTorchBatch(weight, scale, mode, F.pad(torch.rot90(x, r, [
                             2, 3]), (0, pad, 0, pad), mode='replicate'), pad), (4 - r) % 4, [2, 3])
                     pred += tmp
-                    # print(tmp.max(), tmp.min(), s, mode, r)
                     pred = self.round_func(pred)
+                    print(pred.max(), pred.min(), s, mode, r)
+                    print(pred.shape)
+                    print(pred)
         
             x = self.round_func(torch.clamp((pred / avg_factor) + bias, 0, 255))
+            if stage != stages:
+                print(x.shape)
+                print(x)
         # print('*'*10)
 
         if phase == 'train':
@@ -3644,3 +3652,153 @@ class SPF_LUT_DFC(nn.Module):
             x = x / 255.0
         return x
 
+class DepthwiseLUT(nn.Module):
+    def __init__(self, kernel_size=3, out_channels=16):
+        super(DepthwiseLUT, self).__init__()
+        # 生成block_idx的向量化版本
+        self.kernel_size = kernel_size
+        self.out_channels = out_channels
+        if self.kernel_size % 2 == 0:
+            self.pad = 1
+        else:
+            self.pad = self.kernel_size // 2
+        idx = torch.arange(kernel_size**2)
+        block_idx = torch.zeros(kernel_size**2, kernel_size, kernel_size)
+        block_idx[idx, idx//kernel_size, idx%kernel_size] = 1
+        # 创建组合权重张量 (kernel_size² * out_channels, 1, kernel_size, kernel_size)
+        self.wegt = nn.Parameter(
+            block_idx.unsqueeze(1)          # [K², 1, K, K]
+            .repeat(1, out_channels, 1, 1)       # [K², out_channels, K, K] 
+            .view(-1, 1, kernel_size, kernel_size),  # [K²*out_channels, 1, K, K]
+            requires_grad=True
+        )
+        # 创建固定掩码 (注册为buffer)
+        self.register_buffer(
+            "mask",
+            block_idx.unsqueeze(1)          # [K², 1, K, K]
+            .repeat(1, self.out_channels, 1, 1)       # [K², out_channels, K, K] 
+            .view(-1, 1, kernel_size, kernel_size),  # [K²*out_channels, 1, K, K]
+        )
+
+    def forward(self, x):
+        B, C, H, W = x.shape
+        # 组合式卷积操作
+        y = F.conv2d(x, self.wegt * self.mask, padding=self.pad, groups=C).clamp(-128, 127).floor()
+        # 目标维度 [B, K²*out_channels, H', W']
+        # # 每 K² 个取平均值 -> [B, upscale, H', W']
+        y = y.view(B, -1, self.out_channels, y.shape[-2], y.shape[-1])
+        y = y.mean(dim=1)
+        return y
+
+
+
+class PointwiseONE(nn.Module):
+    def __init__(self, upscale=4, n_feature=64):
+        super(PointwiseONE, self).__init__()
+        self.conv1 = nn.Conv2d(1, n_feature, 1, stride=1, padding=0, dilation=1)
+        self.conv2 = nn.Conv2d(n_feature, n_feature, 1, stride=1, padding=0, dilation=1)
+        self.conv3 = nn.Conv2d(n_feature, upscale * upscale, 1, stride=1, padding=0, dilation=1)
+        # Init weights
+        for m in self.modules():
+            classname = m.__class__.__name__
+            if classname.lower().find('conv') != -1:
+                nn.init.kaiming_normal_(m.weight)
+                nn.init.constant_(m.bias, 0)
+
+    def forward(self, x):
+        x = F.relu(self.conv1(x), inplace=True)
+        x = F.relu(self.conv2(x), inplace=True)
+        x = self.conv3(x)
+        return x
+
+
+class PointwiseLUT(nn.Module):
+    def __init__(self, upscale=4, n_feature=64):
+        super(PointwiseLUT, self).__init__()
+        self.upscale = upscale
+        self.Convs = nn.ModuleList()
+        for i in range(upscale * upscale):
+            self.Convs.append(PointwiseONE(upscale=upscale, n_feature=n_feature))
+
+    def forward(self, x, idx=-1):
+        if idx > 0:
+            return self.Convs[idx](x[:, idx:idx+1, :, :]).clamp(-128, 127).floor()
+        else:
+            y = []
+            for i in range(self.upscale * self.upscale):
+                y.append(self.Convs[i](x[:, i:i + 1, :, :]).clamp(-128, 127).floor())
+            return torch.mean(torch.stack(y, 1), 1)
+        
+
+class LogicLUTNet(nn.Module):
+    def __init__(self, kernel_size=3, upscale=4, n_feature=64):
+        super(LogicLUTNet, self).__init__()
+        base_scale = torch.ones([1, upscale * upscale]) * 0.8
+        self.hh1 = nn.Parameter(base_scale)
+        self.hl1 = nn.Parameter(base_scale)
+        self.hh2 = nn.Parameter(base_scale)
+        self.hl2 = nn.Parameter(base_scale)
+
+        self.kernel_size = kernel_size
+        self.upscale = upscale
+        self.dw_msb = DepthwiseLUT(kernel_size=kernel_size, out_channels=upscale ** 2)
+        self.dw_lsb = DepthwiseLUT(kernel_size=kernel_size, out_channels=upscale ** 2)
+        self.pw_msb = PointwiseLUT(upscale=upscale, n_feature=n_feature)
+        self.pw_lsb = PointwiseLUT(upscale=upscale, n_feature=n_feature)
+
+    def extract(self):
+        # <<<< MSB >>>>
+        base = torch.arange(0, 64, 1)
+        L = base.size(0)
+
+        # input
+        first_ = base.cuda().unsqueeze(1)
+        first__ = torch.cat([first_, first_], 1)
+        first___ = torch.cat([first__, first__], 1)
+        first_8 = torch.cat([first___, first___], 1)
+        first_9 = torch.cat([first_8, first_], 1)
+
+        # Depthwise
+        # Rearange input: [N, 4] -> [N, C=1, H=2, W=2]
+        input_tensor = first_9.unsqueeze(1).unsqueeze(1).reshape(-1,1,3,3).float() - 32.0
+        outputs = []
+        for i in range(9):
+            batch_output = self.dw_msb(input_tensor)
+            results = torch.clamp(batch_output[i], -128,127).floor().cpu().data.numpy().astype(np.int8)
+            outputs.append(results)
+        results_cat = np.concatenate(outputs, 0)
+        print("Resulting LUT_cat size: ", results_cat.shape)
+
+        # Pointwise
+        outputs = []
+        for j in range(self.upscale * self.upscale):
+            base = torch.arange(-32, 32)
+            first_ = (base.cuda() * self.hh1[0,j,0,0].item()).floor().unique() 
+            first_ = torch.arange(first_.min(), first_.max() + 1)
+            input_tensor = first_.unsqueeze(1).repeat(1, self.kernel_size**2).unsqueeze(-1).unsqueeze(-1).float()
+            batch_output = self.pw_msb(input_tensor, j)
+            results = torch.clamp(batch_output, -128,127).floor().cpu().data.numpy().astype(np.int8)
+            outputs.append(results)
+        results_cat = np.concatenate(outputs, 0)
+        print("Resulting LUT_cat size: ", results_cat.shape)
+
+
+    def seg(self, x, interval = 2):
+        msb = torch.remainder(x, (interval ** 2)).floor()
+        lsb = torch.div(x, interval ** 2).floor()
+        return msb, lsb
+
+    def forward(self, x):
+        # Channel to batch: [N, C, H, W] -> [N * C, 1, H, W]
+        C = x.size(1)
+        x = x.view(-1, 1, x.size(2), x.size(3))
+        msb, lsb = self.seg(x)
+        msb1 = self.dw_msb(msb).clamp(-32, 31).floor()
+        lsb1 = self.dw_lsb(lsb).clamp(0, 3).floor()
+        msb2 = self.pw_msb(msb1).clamp(-32, 31).floor() * self.hh1.unsqueeze(-1).unsqueeze(-1)
+        lsb2 = self.pw_lsb(lsb1).clamp(0, 3).floor() * self.hl1.unsqueeze(-1).unsqueeze(-1)
+        res = (msb2 * 4 + lsb2).clamp(-128, 127).floor()
+        res = nn.PixelShuffle(self.upscale)(res)
+        # Batch to channel: [N * C, 1, H, W] -> [N, C, H, W]
+        res = res.view(-1, C, res.size(2), res.size(3))
+        return res

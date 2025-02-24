@@ -1,4 +1,10 @@
 
+### Contribution
+
+1. 
+
+
+
 ### Question
 
 
@@ -21,7 +27,16 @@
 13. [On the Automatic Exploration of Weight Sharing for Deep Neural Network Compression](https://past.date-conference.com/proceedings-archive/2020/pdf/0973.pdf)
 14. [(2024)Look-Up Table Compression for Efficient Image Restoration](https://openaccess.thecvf.com/content/CVPR2024/papers/Li_Look-Up_Table_Compression_for_Efficient_Image_Restoration_CVPR_2024_paper.pdf)
 
+15. [(2024)An Energy-Efficient Look-up Table Framework for Super Resolution on FPGA]()
+
+16. [(Picture)PolyLUT-Add: FPGA-based LUT Inference with Wide Inputs](https://arxiv.org/pdf/2406.04910)
+
+17. [(2021)Practical Single-Image Super-Resolution Using Look-Up Table](https://openaccess.thecvf.com/content/CVPR2021/papers/Jo_Practical_Single-Image_Super-Resolution_Using_Look-Up_Table_CVPR_2021_paper.pdf)
+
+18. [(2022)Learning Series-Parallel Lookup Tables for Efficient Image Super-Resolution](https://arxiv.org/pdf/2207.12987)
+
 [(Picture)EvalMuse-40K](https://shh-han.github.io/EvalMuse-project/)
+[(Picture)General In-Hand Object Rotation with Vision and Touch](https://proceedings.mlr.press/v229/qi23a/qi23a.pdf)
 
 [mathcha](https://www.mathcha.io/editor)
 

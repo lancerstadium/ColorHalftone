@@ -1,5 +1,7 @@
 __pycache__
 model_epoch_*
+.vscode
+*.o
 *.log
 *.aux
 *.bbl

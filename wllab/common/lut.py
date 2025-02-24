@@ -514,7 +514,7 @@ def lut_interp_4d_simplex(
     out = out.reshape(N, C, H, W, upscale, upscale)
     out = out.permute(0, 1, 2, 4, 3, 5).reshape(N, C, H * upscale, W * upscale)
     return out
-    
+
 
 class BaseLUT(nn.Module):
     """
