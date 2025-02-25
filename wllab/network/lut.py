@@ -3801,7 +3801,7 @@ class LogicLUTNet(nn.Module):
         is_trs = x.max() <= 1
         if is_trs:
             x = x * 255
-        x = x - 128
+        x = (x - 128).clamp(-128, 127)
         C = x.size(1)
         x = x.view(-1, 1, x.size(2), x.size(3))
         msb, lsb = self.seg(x)
@@ -3809,7 +3809,7 @@ class LogicLUTNet(nn.Module):
         lsb1 = self.dw_lsb(lsb).clamp(0, 3).floor()
         msb2 = self.pw_msb(msb1).clamp(-32, 31).floor()
         lsb2 = self.pw_lsb(lsb1).clamp(0, 3).floor()
-        res = (msb2 * 4 + lsb2).clamp(-128, 127).floor() + x
+        res = ((msb2 * 4 + lsb2) / 2).clamp(-128, 127).floor() + (x / 2).floor()
         res = nn.PixelShuffle(self.upscale)(res)
         # Batch to channel: [N * C, 1, H, W] -> [N, C, H, W]
         res = res.view(-1, C, res.size(2), res.size(3))
