@@ -3653,11 +3653,12 @@ class SPF_LUT_DFC(nn.Module):
         return x
 
 class DepthwiseLUT(nn.Module):
-    def __init__(self, kernel_size=3, out_channels=16):
+    def __init__(self, kernel_size=3, out_channels=16, dense=True):
         super(DepthwiseLUT, self).__init__()
         # 生成block_idx的向量化版本
         self.kernel_size = kernel_size
         self.out_channels = out_channels
+        self.dense = dense
         if self.kernel_size % 2 == 0:
             self.pad = 1
         else:
@@ -3685,9 +3686,12 @@ class DepthwiseLUT(nn.Module):
         # 组合式卷积操作
         y = F.conv2d(x, self.wegt * self.mask, padding=self.pad, groups=C).clamp(-128, 127).floor()
         # 目标维度 [B, K²*out_channels, H', W']
-        # # 每 K² 个取平均值 -> [B, upscale, H', W']
+        # # 每 K² 个取平均值 -> [B, out_channels, H', W']
         y = y.view(B, -1, self.out_channels, y.shape[-2], y.shape[-1])
-        y = y.mean(dim=1)
+        if self.dense:
+            y = y.mean(dim=1) + x
+        else:
+            y = y.mean(dim=1)
         return y
 
 
@@ -3713,8 +3717,9 @@ class PointwiseONE(nn.Module):
 
 
 class PointwiseLUT(nn.Module):
-    def __init__(self, upscale=4, n_feature=64):
+    def __init__(self, upscale=4, n_feature=64, dense=True):
         super(PointwiseLUT, self).__init__()
+        self.dense = dense
         self.upscale = upscale
         self.Convs = nn.ModuleList()
         base_scale = torch.ones([1, upscale * upscale]) * 0.8
@@ -3724,11 +3729,18 @@ class PointwiseLUT(nn.Module):
 
     def forward(self, x, idx=-1):
         if idx > 0:
-            return self.Convs[idx](x[:, idx:idx+1, :, :]) * self.scale[0, i]
+            if self.dense:
+                return self.Convs[idx](x[:, idx:idx+1, :, :]) * self.scale[0, i] + x
+            else:
+                return self.Convs[idx](x[:, idx:idx+1, :, :]) * self.scale[0, i]
         else:
             y = torch.zeros([x.shape[0], self.upscale * self.upscale, x.shape[2], x.shape[3]]).to(x.device)
-            for i in range(self.upscale * self.upscale):
-                y[:, i:i + 1, :, :] = torch.mean(self.Convs[i](x[:, i:i + 1, :, :]) * self.scale[0, i], dim=1, keepdim=True)
+            if self.dense:
+                for i in range(self.upscale * self.upscale):
+                    y[:, i:i + 1, :, :] = torch.mean(self.Convs[i](x[:, i:i + 1, :, :]) * self.scale[0, i] + x, dim=1, keepdim=True)
+            else:
+                for i in range(self.upscale * self.upscale):
+                    y[:, i:i + 1, :, :] = torch.mean(self.Convs[i](x[:, i:i + 1, :, :]) * self.scale[0, i], dim=1, keepdim=True)
             return y
         
 
@@ -3793,10 +3805,10 @@ class LogicLUTNet(nn.Module):
         C = x.size(1)
         x = x.view(-1, 1, x.size(2), x.size(3))
         msb, lsb = self.seg(x)
-        msb1 = self.dw_msb(msb).clamp(-32, 31).floor() + msb
-        lsb1 = self.dw_lsb(lsb).clamp(0, 3).floor() + lsb
-        msb2 = self.pw_msb(msb1).clamp(-32, 31).floor() + msb1
-        lsb2 = self.pw_lsb(lsb1).clamp(0, 3).floor() + lsb1
+        msb1 = self.dw_msb(msb).clamp(-32, 31).floor()
+        lsb1 = self.dw_lsb(lsb).clamp(0, 3).floor()
+        msb2 = self.pw_msb(msb1).clamp(-32, 31).floor()
+        lsb2 = self.pw_lsb(lsb1).clamp(0, 3).floor()
         res = (msb2 * 4 + lsb2).clamp(-128, 127).floor()
         res = nn.PixelShuffle(self.upscale)(res)
         # Batch to channel: [N * C, 1, H, W] -> [N, C, H, W]
