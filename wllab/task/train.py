@@ -123,8 +123,10 @@ def train_sr(
         checkpoint = torch.load(load_path)
         model.load_state_dict(checkpoint["model_state_dict"])
     
-    perceptual_loss = PerceptualLoss().to(device)
+    # perceptual_loss = PerceptualLoss().to(device)
+    # 学习率调度器
     optimizer = optim.Adam(model.parameters(), lr=lr)
+    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[10, 20, 30, 40], gamma=0.1)
 
     # 创建保存路径
     os.makedirs(save_path, exist_ok=True)
@@ -164,18 +166,19 @@ def train_sr(
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
+                scheduler.step()
                 epoch_loss += loss.item()
 
                 # 更新 tqdm 显示
                 pbar.set_postfix({
-                    "recon": f"{recon_loss.item():.4f}",
-                    "total": f"{loss.item():.4f}"
+                    "recon": f"{recon_loss.item():.5f}",
+                    "total": f"{loss.item():.5f}"
                 })
                 pbar.update(1)
 
         # 平均损失
         avg_loss = epoch_loss / len(pdataloader)
-        print(f"Epoch [{epoch + 1}/{num_epochs}] completed. Average Loss: {avg_loss:.4f}")
+        print(f"Epoch [{epoch + 1}/{num_epochs}] completed. Average Loss: {avg_loss:.5f}")
 
         # 保存模型
         checkpoint = {
@@ -273,14 +276,14 @@ def finetune_lut_sr(model,
 
                 # 更新 tqdm 显示
                 pbar.set_postfix({
-                    "recon": f"{recon_loss.item():.4f}",
-                    "total": f"{loss.item():.4f}"
+                    "recon": f"{recon_loss.item():.5f}",
+                    "total": f"{loss.item():.5f}"
                 })
                 pbar.update(1)
 
         # 平均损失
         avg_loss = epoch_loss / len(pdataloader)
-        print(f"Epoch [{epoch + 1}/{num_epochs}] completed. Average Loss: {avg_loss:.4f}")
+        print(f"Epoch [{epoch + 1}/{num_epochs}] completed. Average Loss: {avg_loss:.5f}")
 
         # 验证
         if (epoch + 1) % val_epochs == 0:
