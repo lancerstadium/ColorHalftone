@@ -3753,8 +3753,7 @@ class LogicLUTNet(nn.Module):
         self.dw_lsb = DepthwiseLUT(kernel_size=kernel_size, out_channels=upscale ** 2)
         self.pw_msb = PointwiseLUT(upscale=upscale, n_feature=n_feature)
         self.pw_lsb = PointwiseLUT(upscale=upscale, n_feature=n_feature)
-        self.us_msb = PointwiseLUT(upscale=1, n_feature=n_feature)
-        self.us_lsb = PointwiseLUT(upscale=1, n_feature=n_feature)
+        self.enhance = PointwiseLUT(upscale=1, n_feature=n_feature)
 
     def extract(self):
         # <<<< MSB >>>>
@@ -3811,11 +3810,9 @@ class LogicLUTNet(nn.Module):
         lsb1 = self.dw_lsb(lsb).clamp(0, 3).floor()
         msb2 = self.pw_msb(msb1).clamp(-32, 31).floor()
         lsb2 = self.pw_lsb(lsb1).clamp(0, 3).floor()
-        msb2 = nn.PixelShuffle(self.upscale)(msb2)
-        lsb2 = nn.PixelShuffle(self.upscale)(lsb2)
-        msb3 = self.us_msb(msb2).clamp(-128, 127).floor()
-        lsb3 = self.us_lsb(lsb2).clamp(-128, 127).floor()
-        res = (msb3 + lsb3).clamp(-128, 127).floor()
+        res2 = ((msb2 + lsb2) + x).clamp(-128, 127).floor()
+        res = nn.PixelShuffle(upscale_factor=self.upscale)(res2)
+        res = self.enhance(res).clamp(-128, 127).floor()
         # Batch to channel: [N * C, 1, H, W] -> [N, C, H, W]
         res = res.view(-1, C, res.size(2), res.size(3))
         res = res + 128
