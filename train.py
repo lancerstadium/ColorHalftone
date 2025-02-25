@@ -89,9 +89,9 @@ def TRAIN_SR():
 
 # 主函数
 if __name__ == "__main__":
-    TRAIN_SR()
-    # import torch
-    # I = torch.randn(1, 3, 48, 48)
-    # model = LogicLUTNet(kernel_size=3, upscale=4, n_feature=64)
-    # O = model(I)
-    # print(O.shape)
+    # TRAIN_SR()
+    import torch
+    I = torch.randn(1, 3, 48, 48)
+    model = LogicLUTNet(kernel_size=3, upscale=4, n_feature=64)
+    O = model(I)
+    print(O.shape)
