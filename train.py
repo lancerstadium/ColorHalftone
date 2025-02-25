@@ -58,8 +58,8 @@ def TRAIN_SR():
     pdataset = PairedDataset(
         image_dir1="../dataset/DIV2K/LR/X4",
         image_dir2="../dataset/DIV2K/HR",
-        transform1=transform1,
-        transform2=transform2,
+        transform1=None,
+        transform2=None,
         max_images=800,
         crop_size=(48, 48),
         upscale_factor=4,

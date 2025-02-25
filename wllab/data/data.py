@@ -1,6 +1,7 @@
 from torch.utils.data import Dataset
 from PIL import Image
 import os
+import torch
 import random
 import numpy as np
 
@@ -97,9 +98,12 @@ class PairedDataset(Dataset):
         # 应用 transform1 和 transform2
         if self.transform1:
             image1 = self.transform1(image1)
+        else:
+            image1 = torch.from_numpy(np.array(image1).transpose(2, 0, 1)).float()
         if self.transform2:
             image2 = self.transform2(image2)
-        
+        else:
+            image2 = torch.from_numpy(np.array(image2).transpose(2, 0, 1)).float()
         return image1, image2
 
     def get_random_crop_params(self, image_size, crop_size):
