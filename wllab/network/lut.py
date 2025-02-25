@@ -3728,7 +3728,7 @@ class PointwiseLUT(nn.Module):
         else:
             y = torch.zeros([x.shape[0], self.upscale * self.upscale, x.shape[2], x.shape[3]]).to(x.device)
             for i in range(self.upscale * self.upscale):
-                y[:, i:i + 1, :, :] = torch.sum(self.Convs[i](x[:, i:i + 1, :, :]) * self.scale[0, i], dim=1, keepdim=True)
+                y[:, i:i + 1, :, :] = torch.mean(self.Convs[i](x[:, i:i + 1, :, :]) * self.scale[0, i], dim=1, keepdim=True)
             return y
         
 

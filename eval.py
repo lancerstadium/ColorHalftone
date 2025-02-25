@@ -4,7 +4,7 @@ from torchvision.transforms import ToTensor, Resize, Normalize, RandomCrop, Gray
 from torch.utils.data import DataLoader
 
 from wllab.common.lut import lut_load
-from wllab.network.lut import SRNet, SPF_LUT_net, MuLUT
+from wllab.network.lut import SRNet, SPF_LUT_net, MuLUT, LogicLUTNet
 from wllab.network.ed import EnDeNet
 from wllab.network.ht import HalftoneNet
 from wllab.data.data import SingleDataset, PairedDataset
@@ -41,14 +41,15 @@ def EVAL_SR():
 
 def EVAL_LUT_SR():
     # 新建MuLUT模型，加载LUT
-    model = MuLUT("./lut/", 2, ['s', 'd', 'y'], "x4_4b_i8", 4, 4)
+    # model = MuLUT("./lut/", 2, ['s', 'd', 'y'], "x4_4b_i8", 4, 4)
     # model = BaseLUT(None, 2, ['s', 'd', 'y'], 8, 4, 4)
-    lut_load(model, ['s', 'd', 'y'], 2, 8, 4, 4, './lut')
+    # lut_load(model, ['s', 'd', 'y'], 2, 8, 4, 4, './lut')
     # lut_load(model, ['s', 'd', 'y'], 2, 8, 4, 4, './lut', '', '_c1')
     # lut_load(model, ['s', 'd', 'y'], 2, 8, 4, 4, './lut', '', '_c2')
+    model = LogicLUTNet(kernel_size=3, upscale=4, n_feature=64)
 
     ints = torch.rand(1, 1, 48, 48)
-    print(model.weight_s1_s[0:4])
+    # print(model.weight_s1_s[0:4])
     print(model(ints).shape)
 
     # 数据预处理
@@ -82,7 +83,7 @@ def EVAL_LUT_SR():
         evaluate_sr(
             model,
             vdataloader,
-            None,
+            './checkpoints/latest_model.pth',
             f'./results/{k}',
             0
         )
@@ -182,5 +183,5 @@ def EVAL_HT():
 
 # 主函数
 if __name__ == "__main__":
-    EVAL_LUT_SR1()
+    EVAL_LUT_SR()
 
