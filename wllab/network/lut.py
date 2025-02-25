@@ -4196,8 +4196,8 @@ class TinyLUTNet(torch.nn.Module):
         if is_trs:
             x = x * 255
         x = (x - 128).clamp(-128, 127)
-        x = x.view(-1, 1, x.size(2), x.size(3))
         C = x.size(1)
+        x = x.view(-1, 1, x.size(2), x.size(3))
         xh, xl = self.low_high(x)
         # layer 1
         batch_xh = torch.cat(self.depthconv1(xh, xl, True) , dim=1).view(-1, 9, 16, xh.size(2) - 2, xh.size(3) - 2).sum(dim=1)

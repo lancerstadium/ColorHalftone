@@ -93,7 +93,7 @@ def TRAIN_SR():
 if __name__ == "__main__":
     TRAIN_SR()
     # import torch
-    # I = torch.randn(1, 3, 48, 48)
+    # I = torch.randn(1, 3, 50, 50)
     # model = TinyLUTNet()
     # O = model(I)
     # print(O.shape)
