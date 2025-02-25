@@ -3753,7 +3753,7 @@ class LogicLUTNet(nn.Module):
         self.dw_lsb = DepthwiseLUT(kernel_size=kernel_size, out_channels=upscale ** 2)
         self.pw_msb = PointwiseLUT(upscale=upscale, n_feature=n_feature)
         self.pw_lsb = PointwiseLUT(upscale=upscale, n_feature=n_feature)
-        self.enhance = PointwiseLUT(upscale=1, n_feature=n_feature)
+        self.enhance = PointwiseLUT(upscale=1, n_feature=n_feature // 4)
 
     def extract(self):
         # <<<< MSB >>>>
