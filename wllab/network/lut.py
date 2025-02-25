@@ -3707,9 +3707,9 @@ class DepthwiseLUT(nn.Module):
         # # 每 K² 个取平均值 -> [B, out_channels, H', W']
         y = y.view(B, -1, self.out_channels, y.shape[-2], y.shape[-1])
         if self.dense:
-            y = y.mean(dim=1) + x
+            y = floor_ste(y.mean(dim=1)).clamp(-128,127) + x
         else:
-            y = y.mean(dim=1)
+            y = floor_ste(y.mean(dim=1)).clamp(-128,127)
         return y
 
 
@@ -3731,7 +3731,7 @@ class PointwiseONE(nn.Module):
         x = F.relu(self.conv1(x), inplace=True)
         x = F.relu(self.conv2(x), inplace=True)
         x = self.conv3(x)
-        return x
+        return floor_ste(x)
 
 
 class PointwiseLUT(nn.Module):
@@ -3748,18 +3748,17 @@ class PointwiseLUT(nn.Module):
     def forward(self, x, idx=-1):
         if idx > 0:
             if self.dense:
-                return self.Convs[idx](x[:, idx:idx+1, :, :]) * self.scale[0, i] + x
+                return self.Convs[idx](x[:, idx:idx+1, :, :] * self.scale[0, i]) + x
             else:
-                return self.Convs[idx](x[:, idx:idx+1, :, :]) * self.scale[0, i]
+                return self.Convs[idx](x[:, idx:idx+1, :, :] * self.scale[0, i])
         else:
-            y = torch.zeros([x.shape[0], self.upscale * self.upscale, x.shape[2], x.shape[3]]).to(x.device)
+            y = []
+            for i in range(self.upscale * self.upscale):
+                y.append(floor_ste(self.Convs[i](x[:, i:i + 1, :, :] * self.scale[0, i])).clamp(-128,127))
             if self.dense:
-                for i in range(self.upscale * self.upscale):
-                    y[:, i:i + 1, :, :] = torch.mean(self.Convs[i](x[:, i:i + 1, :, :]) * self.scale[0, i] + x, dim=1, keepdim=True)
+                return floor_ste(torch.mean(torch.stack(y, 1), 1)).clamp(-128,127) + x
             else:
-                for i in range(self.upscale * self.upscale):
-                    y[:, i:i + 1, :, :] = torch.mean(self.Convs[i](x[:, i:i + 1, :, :]) * self.scale[0, i], dim=1, keepdim=True)
-            return y
+                return floor_ste(torch.mean(torch.stack(y, 1), 1)).clamp(-128,127)
         
 
 class LogicLUTNet(nn.Module):
@@ -3824,13 +3823,13 @@ class LogicLUTNet(nn.Module):
         C = x.size(1)
         x = x.view(-1, 1, x.size(2), x.size(3))
         msb, lsb = self.seg(x)
-        msb1 = floor_ste(self.dw_msb(msb).clamp(-32, 31))
-        lsb1 = floor_ste(self.dw_lsb(lsb).clamp(0, 3))
-        msb2 = floor_ste(self.pw_msb(msb1).clamp(-32, 31))
-        lsb2 = floor_ste(self.pw_lsb(lsb1).clamp(0, 3))
-        res2 = floor_ste((msb2 * 4 + lsb2).clamp(-128, 127))
-        res = nn.PixelShuffle(upscale_factor=self.upscale)(res2)
-        res = floor_ste(self.enhance(res).clamp(-128, 127))
+        msb1 = self.dw_msb(msb).clamp(-32, 31)
+        lsb1 = self.dw_lsb(lsb).clamp(0, 3)
+        msb2 = self.pw_msb(msb1).clamp(-32, 31)
+        lsb2 = self.pw_lsb(lsb1).clamp(0, 3)
+        res2 = (msb2 * 4 + lsb2).clamp(-128, 127)
+        res = nn.PixelShuffle(self.upscale)(res2)
+        res = self.enhance(res).clamp(-128, 127)
         # Batch to channel: [N * C, 1, H, W] -> [N, C, H, W]
         res = res.view(-1, C, res.size(2), res.size(3))
         res = res + 128
