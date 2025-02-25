@@ -3790,6 +3790,9 @@ class LogicLUTNet(nn.Module):
 
     def forward(self, x):
         # Channel to batch: [N, C, H, W] -> [N * C, 1, H, W]
+        is_trs = x.max() <= 1
+        if is_trs:
+            x = x * 255
         x = x - 128
         C = x.size(1)
         x = x.view(-1, 1, x.size(2), x.size(3))
@@ -3803,4 +3806,6 @@ class LogicLUTNet(nn.Module):
         # Batch to channel: [N * C, 1, H, W] -> [N, C, H, W]
         res = res.view(-1, C, res.size(2), res.size(3))
         res = res + 128
+        if is_trs:
+            res = res / 255
         return res
