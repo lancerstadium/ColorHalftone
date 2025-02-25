@@ -82,7 +82,7 @@ def TRAIN_SR():
         lr=1e-5,
         save_path="./checkpoints",
         is_self_ensemble=True,
-        pad=1
+        pad=0
     )
 
 
