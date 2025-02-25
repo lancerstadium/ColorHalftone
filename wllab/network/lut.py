@@ -3717,28 +3717,24 @@ class PointwiseLUT(nn.Module):
         super(PointwiseLUT, self).__init__()
         self.upscale = upscale
         self.Convs = nn.ModuleList()
+        base_scale = torch.ones([1, upscale * upscale]) * 0.8
+        self.scale = nn.Parameter(base_scale)
         for i in range(upscale * upscale):
             self.Convs.append(PointwiseONE(upscale=upscale, n_feature=n_feature))
 
     def forward(self, x, idx=-1):
         if idx > 0:
-            return self.Convs[idx](x[:, idx:idx+1, :, :]).clamp(-128, 127).floor()
+            return self.Convs[idx](x[:, idx:idx+1, :, :]) * self.scale[0, i]
         else:
-            y = []
+            y = torch.zeros([x.shape[0], self.upscale * self.upscale, x.shape[2], x.shape[3]]).to(x.device)
             for i in range(self.upscale * self.upscale):
-                y.append(self.Convs[i](x[:, i:i + 1, :, :]).clamp(-128, 127).floor())
-            return torch.mean(torch.stack(y, 1), 1)
+                y[:, i:i + 1, :, :] = torch.sum(self.Convs[i](x[:, i:i + 1, :, :]) * self.scale[0, i], dim=1, keepdim=True)
+            return y
         
 
 class LogicLUTNet(nn.Module):
     def __init__(self, kernel_size=3, upscale=4, n_feature=64):
         super(LogicLUTNet, self).__init__()
-        base_scale = torch.ones([1, upscale * upscale]) * 0.8
-        self.hh1 = nn.Parameter(base_scale)
-        self.hl1 = nn.Parameter(base_scale)
-        self.hh2 = nn.Parameter(base_scale)
-        self.hl2 = nn.Parameter(base_scale)
-
         self.kernel_size = kernel_size
         self.upscale = upscale
         self.dw_msb = DepthwiseLUT(kernel_size=kernel_size, out_channels=upscale ** 2)
@@ -3773,7 +3769,7 @@ class LogicLUTNet(nn.Module):
         outputs = []
         for j in range(self.upscale * self.upscale):
             base = torch.arange(-32, 32)
-            first_ = (base.cuda() * self.hh1[0,j,0,0].item()).floor().unique() 
+            first_ = (base.cuda() * self.pw_msb.scale[0,j].item()).floor().unique() 
             first_ = torch.arange(first_.min(), first_.max() + 1)
             input_tensor = first_.unsqueeze(1).repeat(1, self.kernel_size**2).unsqueeze(-1).unsqueeze(-1).float()
             batch_output = self.pw_msb(input_tensor, j)
@@ -3799,8 +3795,8 @@ class LogicLUTNet(nn.Module):
         msb, lsb = self.seg(x)
         msb1 = self.dw_msb(msb).clamp(-32, 31).floor()
         lsb1 = self.dw_lsb(lsb).clamp(0, 3).floor()
-        msb2 = self.pw_msb(msb1).clamp(-32, 31).floor() * self.hh1.unsqueeze(-1).unsqueeze(-1)
-        lsb2 = self.pw_lsb(lsb1).clamp(0, 3).floor() * self.hl1.unsqueeze(-1).unsqueeze(-1)
+        msb2 = self.pw_msb(msb1).clamp(-32, 31).floor()
+        lsb2 = self.pw_lsb(lsb1).clamp(0, 3).floor()
         res = (msb2 * 4 + lsb2).clamp(-128, 127).floor()
         res = nn.PixelShuffle(self.upscale)(res)
         # Batch to channel: [N * C, 1, H, W] -> [N, C, H, W]
