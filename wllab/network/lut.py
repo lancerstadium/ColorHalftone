@@ -3652,6 +3652,24 @@ class SPF_LUT_DFC(nn.Module):
             x = x / 255.0
         return x
 
+
+
+class FloorSTE(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, x):
+        # 前向传播直接返回 floor(x)
+        return torch.floor(x)
+    
+    @staticmethod
+    def backward(ctx, grad_output):
+        # 反向传播时，直接返回原始梯度（绕过 floor 的梯度）
+        return grad_output.clone()
+
+# 封装成可调用的函数
+def floor_ste(x):
+    return FloorSTE.apply(x)
+
+
 class DepthwiseLUT(nn.Module):
     def __init__(self, kernel_size=3, out_channels=16, dense=True):
         super(DepthwiseLUT, self).__init__()
@@ -3684,7 +3702,7 @@ class DepthwiseLUT(nn.Module):
     def forward(self, x):
         B, C, H, W = x.shape
         # 组合式卷积操作
-        y = F.conv2d(x, self.wegt * self.mask, padding=self.pad, groups=C).clamp(-128, 127).floor()
+        y = F.conv2d(x, self.wegt * self.mask, padding=self.pad, groups=C)
         # 目标维度 [B, K²*out_channels, H', W']
         # # 每 K² 个取平均值 -> [B, out_channels, H', W']
         y = y.view(B, -1, self.out_channels, y.shape[-2], y.shape[-1])
@@ -3793,8 +3811,8 @@ class LogicLUTNet(nn.Module):
 
 
     def seg(self, x, interval = 2):
-        msb = torch.remainder(x, (interval ** 2)).floor()
-        lsb = torch.div(x, interval ** 2).floor()
+        msb = floor_ste(torch.remainder(x, (interval ** 2)))
+        lsb = floor_ste(torch.div(x, interval ** 2))
         return msb, lsb
 
     def forward(self, x):
@@ -3806,13 +3824,13 @@ class LogicLUTNet(nn.Module):
         C = x.size(1)
         x = x.view(-1, 1, x.size(2), x.size(3))
         msb, lsb = self.seg(x)
-        msb1 = self.dw_msb(msb).clamp(-32, 31).floor()
-        lsb1 = self.dw_lsb(lsb).clamp(0, 3).floor()
-        msb2 = self.pw_msb(msb1).clamp(-32, 31).floor()
-        lsb2 = self.pw_lsb(lsb1).clamp(0, 3).floor()
-        res2 = (msb2 * 4 + lsb2).clamp(-128, 127).floor()
+        msb1 = floor_ste(self.dw_msb(msb).clamp(-32, 31))
+        lsb1 = floor_ste(self.dw_lsb(lsb).clamp(0, 3))
+        msb2 = floor_ste(self.pw_msb(msb1).clamp(-32, 31))
+        lsb2 = floor_ste(self.pw_lsb(lsb1).clamp(0, 3))
+        res2 = floor_ste((msb2 * 4 + lsb2).clamp(-128, 127))
         res = nn.PixelShuffle(upscale_factor=self.upscale)(res2)
-        res = self.enhance(res).clamp(-128, 127).floor()
+        res = floor_ste(self.enhance(res).clamp(-128, 127))
         # Batch to channel: [N * C, 1, H, W] -> [N, C, H, W]
         res = res.view(-1, C, res.size(2), res.size(3))
         res = res + 128
