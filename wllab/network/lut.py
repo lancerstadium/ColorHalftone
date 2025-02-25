@@ -3717,12 +3717,12 @@ class PointwiseONE(nn.Module):
 
 
 class PointwiseLUT(nn.Module):
-    def __init__(self, upscale=4, n_feature=64, dense=True):
+    def __init__(self, upscale=4, n_feature=64, dense=True, ratio=0.8):
         super(PointwiseLUT, self).__init__()
         self.dense = dense
         self.upscale = upscale
         self.Convs = nn.ModuleList()
-        base_scale = torch.ones([1, upscale * upscale]) * 0.8
+        base_scale = torch.ones([1, upscale * upscale]) * ratio
         self.scale = nn.Parameter(base_scale)
         for i in range(upscale * upscale):
             self.Convs.append(PointwiseONE(upscale=upscale, n_feature=n_feature))
@@ -3753,7 +3753,7 @@ class LogicLUTNet(nn.Module):
         self.dw_lsb = DepthwiseLUT(kernel_size=kernel_size, out_channels=upscale ** 2)
         self.pw_msb = PointwiseLUT(upscale=upscale, n_feature=n_feature)
         self.pw_lsb = PointwiseLUT(upscale=upscale, n_feature=n_feature)
-        self.enhance = PointwiseLUT(upscale=1, n_feature=n_feature // 4)
+        self.enhance = PointwiseLUT(upscale=1, n_feature=n_feature // 4, ratio=1)
 
     def extract(self):
         # <<<< MSB >>>>
