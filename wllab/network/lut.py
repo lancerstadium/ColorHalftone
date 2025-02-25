@@ -4226,3 +4226,174 @@ class TinyLUTNet(torch.nn.Module):
         return res
 
 
+class DepthWiseOpt(torch.nn.Module):
+    def __init__(self, nkernel=3, channel=16):
+        super().__init__()
+        self.channel = channel
+        
+        # 动态生成所有卷积核 (High/Low各9个)
+        base_kernel = torch.eye(nkernel**2).view(nkernel**2, 1, nkernel, nkernel)  # [9,1,3,3]
+        self.weights_high = nn.Parameter(base_kernel.repeat(channel, 1, 1, 1))     # [9*C,1,3,3]
+        self.weights_low = nn.Parameter(base_kernel.repeat(channel, 1, 1, 1))      # [9*C,1,3,3]
+        
+        # 注册不可训练的掩码
+        self.register_buffer('mask_high', (self.weights_high != 0))
+        self.register_buffer('mask_low', (self.weights_low != 0))
+
+    def _grouped_conv(self, x, weights, mask, groups):
+        """合并多组卷积计算，减少内存碎片"""
+        B, C, H, W = x.size()
+        return F.conv2d(
+            x.repeat(1, groups, 1, 1),          # [B, groups*C, H, W]
+            weights * mask,                     # [groups*C,1,3,3]
+            padding=0,
+            groups=groups * C
+        ).view(B, groups, self.channel , H-2, W-2)          # [B, groups, self.channel , H', W']
+
+    def forward(self, xh, xl, h):
+        if h:
+            outputs = self._grouped_conv(xh, self.weights_high, self.mask_high, 9)
+            return [XQuantize.apply(outputs[:,i]) for i in range(9)]
+        else:
+            outputs = self._grouped_conv(xl, self.weights_low, self.mask_low, 9)
+            return [XQuantize.apply(outputs[:,i]) for i in range(9)]
+
+
+
+class PointOneChannelOpt(torch.nn.Module):
+    """参数共享版单通道卷积"""
+    def __init__(self, in_ch=1, out_ch=16):
+        super().__init__()
+        self.conv = nn.Sequential(
+            nn.Conv2d(in_ch, 64, 1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(64, 64, 1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(64, out_ch, 1)
+        )
+        # 初始化
+        for layer in self.conv:
+            if isinstance(layer, nn.Conv2d):
+                nn.init.kaiming_normal_(layer.weight)
+                nn.init.zeros_(layer.bias)
+
+    def forward(self, x):
+        return XQuantize.apply(self.conv(x).clamp(-128, 127))
+
+class PointConvOpt(torch.nn.Module):
+    """共享基础卷积参数的点卷积模块"""
+    def __init__(self, num_channels=16):
+        super().__init__()
+        self.base_conv = PointOneChannelOpt()  # 共享参数
+        self.num_channels = num_channels
+
+    def forward(self, xh, xl, h, s, l):
+        from torch.utils.checkpoint import checkpoint
+        
+        if s:
+            # 梯度检查点技术减少内存
+            def process(i, is_high):
+                x = xh[:,i:i+1] if is_high else xl[:,i:i+1]
+                return checkpoint(self.base_conv, x)
+            
+            outputs = [process(i, h) for i in range(self.num_channels)]
+            return torch.stack(outputs, dim=1)  # 直接返回拼接结果
+        else:
+            # 单通道处理逻辑保持不变
+            return self.base_conv(xh if h else xl)
+
+
+class UpOneChannelOpt(torch.nn.Module):
+    """参数共享版上采样卷积"""
+    def __init__(self, in_ch=1, out_ch=16):
+        super().__init__()
+        self.conv = nn.Sequential(
+            nn.Conv2d(in_ch, 64, 1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(64, 64, 1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(64, 64, 1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(64, 64, 1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(64, out_ch, 1)
+        )
+        # 初始化
+        for layer in self.conv:
+            if isinstance(layer, nn.Conv2d):
+                nn.init.kaiming_normal_(layer.weight)
+                nn.init.zeros_(layer.bias)
+
+    def forward(self, x):
+        return XQuantize.apply(self.conv(x).clamp(-128, 127))
+
+class UpConvOpt(torch.nn.Module):
+    def __init__(self, num_channels=16):
+        super().__init__()
+        self.base_conv = UpOneChannelOpt()  # 共享参数
+        self.num_channels = num_channels
+
+    def forward(self, xh, xl, h, s, l):
+        # 实现逻辑与PointConvOpt类似
+        if s:
+            outputs = [self.base_conv(xh[:,i:i+1] if h else xl[:,i:i+1])  for i in range(self.num_channels)]
+            return torch.stack(outputs, dim=1)
+        else:
+            return self.base_conv(xh if h else xl)
+
+
+class TinyLUTNetOpt(torch.nn.Module):
+    def __init__(self, upscale=4):
+        super().__init__()
+        # 主要模块
+        self.depthwise = DepthWiseOpt()
+        self.pointconv = PointConvOpt()
+        self.upconv = UpConvOpt()
+        self.upscale = upscale
+        
+        # 量化参数 (改为可训练参数)
+        self.clip_hh1 = nn.Parameter(torch.full((1,16,1,1), 0.8))
+        self.clip_hl1 = nn.Parameter(torch.full((1,16,1,1), 0.8))
+        self.clip_hl2 = nn.Parameter(torch.full((1,16,1,1), 0.8))
+        self.clip_hh2 = nn.Parameter(torch.full((1,16,1,1), 0.8))
+
+    @staticmethod
+    def low_high(image):
+        xl = torch.remainder(image, 4)
+        xh = torch.div(image, 4)
+        return xl, xh
+
+    def forward(self, x):
+        # 输入预处理
+        is_trs = x.max() <= 1
+        x = x * 255 if is_trs else x
+        x = (x - 128).clamp(-128, 127)
+        
+        # 通道维度处理
+        B, C, H, W = x.size()
+        x = x.view(B*C, 1, H, W)
+        xl, xh = self.low_high(x)
+
+        # Layer 1: Depthwise
+        xh_list = torch.stack(self.depthwise(xh, xl, h=True), dim=1).sum(dim=1)
+        xl_list = torch.stack(self.depthwise(xh, xl, h=False), dim=1).sum(dim=1)
+        xh = (XQuantize.apply(xh_list / 9) + xh[:,:,2:,2:]).clamp(-32, 31)
+        xl = (XQuantize.apply(xl_list / 9) + xl[:,:,2:,2:]).clamp(0, 3)
+
+        # Layer 2: PointConv
+        xH = self.pointconv(xh * self.clip_hh1, xl, h=True, s=True, l=0).sum(dim=1)
+        xL = self.pointconv(xh, xl * self.clip_hl1, h=False, s=True, l=0).sum(dim=1)
+        xh = (XQuantize.apply(xH / 16) + xh).clamp(-32, 31)
+        xl = (XQuantize.apply(xL / 16) + xl).clamp(0, 3)
+
+        # Layer 3: UpConv
+        xH = self.upconv(xh * self.clip_hh2, xl, h=True, s=True, l=0).sum(dim=1)
+        xL = self.upconv(xh, xl * self.clip_hl2, h=False, s=True, l=0).sum(dim=1)
+        xh = (XQuantize.apply(xH / 16) + xh).clamp(-128, 127)
+        xl = (XQuantize.apply(xL / 16) + xl).clamp(-128, 127)
+        res = (xh + xl).clamp(-128, 127)
+        
+        # 上采样与后处理
+        res = nn.PixelShuffle(self.upscale)(res)
+        res = res.view(B, C, (H - 2) * self.upscale, (W - 2) * self.upscale)
+        return (res + 128) / 255 if is_trs else res + 128
