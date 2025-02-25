@@ -3810,7 +3810,7 @@ class LogicLUTNet(nn.Module):
         lsb1 = self.dw_lsb(lsb).clamp(0, 3).floor()
         msb2 = self.pw_msb(msb1).clamp(-32, 31).floor()
         lsb2 = self.pw_lsb(lsb1).clamp(0, 3).floor()
-        res2 = ((msb2 + lsb2) + x).clamp(-128, 127).floor()
+        res2 = (msb2 * 4 + lsb2).clamp(-128, 127).floor()
         res = nn.PixelShuffle(upscale_factor=self.upscale)(res2)
         res = self.enhance(res).clamp(-128, 127).floor()
         # Batch to channel: [N * C, 1, H, W] -> [N, C, H, W]
