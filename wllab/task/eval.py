@@ -44,7 +44,9 @@ def evaluate_sr(model,
     pdataloader, 
     load_path='./checkpoints/latest_model.pth', 
     save_dir="./results",
-    pad = 1):
+    pad = 1,
+    is_rev = False
+):
     """
     模型评估函数，计算 PSNR 和 SSIM。
     Args:
@@ -64,6 +66,11 @@ def evaluate_sr(model,
     total_ssim = 0.0
     num_images = 0
 
+    if is_rev:
+        pad_tuple = (pad, 0, pad, 0)
+    else:
+        pad_tuple = (0, pad, 0, pad)
+
     # 创建保存目录
     os.makedirs(save_dir, exist_ok=True)
 
@@ -75,7 +82,7 @@ def evaluate_sr(model,
         i = 0
         for org, ref in tqdm.tqdm(pdataloader, desc="Evaluating", total=len(pdataloader)):
             org = org.to(device)  # 输入形状: [B, 3, H, W]
-            org = F.pad(org, (0, pad, 0, pad), mode='replicate')
+            org = F.pad(org, pad_tuple, mode='replicate')
             ref = ref.to(device)
             # 前向传播
             out = model(org)  # 输出: [B, 3, H, W]

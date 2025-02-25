@@ -112,7 +112,8 @@ def train_sr(
     lr=1e-4,
     save_path="./checkpoints",
     is_self_ensemble = False,
-    pad = 1
+    pad = 1,
+    is_rev = False
 ):
     """
     模型训练函数，结合感知损失、稀疏性损失和颜色正则化损失。
@@ -132,6 +133,11 @@ def train_sr(
     os.makedirs(save_path, exist_ok=True)
     latest_model_path = os.path.join(save_path, "latest_model.pth")
 
+    if is_rev:
+        pad_tuple = (pad, 0, pad, 0)
+    else:
+        pad_tuple = (0, pad, 0, pad)
+
     for epoch in range(num_epochs):
         model.train()
         epoch_loss = 0.0
@@ -146,7 +152,7 @@ def train_sr(
                     # 自集成训练
                     for i in range(4):
                         # 前向传播
-                        orx = F.pad(torch.rot90(org, i, [2, 3]), (0, pad, 0, pad), mode='replicate').to(device)
+                        orx = F.pad(torch.rot90(org, i, [2, 3]), pad_tuple, mode='replicate').to(device)
                         out = model(orx).to(device)
                         out = torch.rot90(out, -i, [2, 3]).to(device)
                         # 1. 重建损失（感知损失 + MSE）
@@ -154,7 +160,7 @@ def train_sr(
                     recon_loss /= 4
                 else:
                     # 前向传播
-                    org = F.pad(org, (0, pad, 0, pad), mode='replicate')
+                    org = F.pad(org, pad_tuple, mode='replicate')
                     out = model(org).to(device)
                     # 1. 重建损失（感知损失 + MSE）
                     recon_loss = F.mse_loss(out, ref) 

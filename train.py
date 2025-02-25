@@ -2,7 +2,7 @@ import torchvision
 from torchvision.transforms import ToTensor, Resize, Normalize, RandomCrop, Grayscale, CenterCrop, Pad
 from torch.utils.data import DataLoader
 
-from wllab.network.lut import SRNet, SPF_LUT_net, MuLUT, BaseSRNets, DepthwiseLUT, PointwiseONE, PointwiseLUT, LogicLUTNet
+from wllab.network.lut import SRNet, SPF_LUT_net, MuLUT, BaseSRNets, DepthwiseLUT, PointwiseONE, PointwiseLUT, LogicLUTNet, TinyLUTNet
 from wllab.network.ht import HalftoneNet
 from wllab.data.data import SingleDataset, PairedDataset
 from wllab.task.train import train_ht, train_sr
@@ -71,7 +71,8 @@ def TRAIN_SR():
     # model = SRNet(mode='SxN', nf=64, upscale=4, dense=True)
     # model = BaseSRNets(nf=64, scale=4, modes="sdy", stages=2)
     # model = HalftoneNet(in_channels=3, num_classes=64, num_features=128, block_size=3, scale=4)
-    model = LogicLUTNet(kernel_size=3, upscale=4, n_feature=64)
+    # model = LogicLUTNet(kernel_size=3, upscale=4, n_feature=64)
+    model = TinyLUTNet()
 
     # 开始训练
     train_sr(
@@ -82,7 +83,8 @@ def TRAIN_SR():
         lr=1e-5,
         save_path="./checkpoints",
         is_self_ensemble=True,
-        pad=0
+        pad=2,
+        is_rev=True
     )
 
 
@@ -92,6 +94,6 @@ if __name__ == "__main__":
     TRAIN_SR()
     # import torch
     # I = torch.randn(1, 3, 48, 48)
-    # model = LogicLUTNet(kernel_size=3, upscale=4, n_feature=64)
+    # model = TinyLUTNet()
     # O = model(I)
     # print(O.shape)
