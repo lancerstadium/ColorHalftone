@@ -4256,8 +4256,6 @@ class DepthWiseOpt(torch.nn.Module):
         return [XQuantize.apply(outputs[:,i]) for i in range(9)]  # 保持量化顺序
 
 
-
-
 class PointOneChannelOpt(torch.nn.Module):
     def __init__(self, in_ch=1, out_ch=16):
         super().__init__()

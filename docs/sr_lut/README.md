@@ -38,6 +38,8 @@
 [(Picture)EvalMuse-40K](https://shh-han.github.io/EvalMuse-project/)
 [(Picture)General In-Hand Object Rotation with Vision and Touch](https://proceedings.mlr.press/v229/qi23a/qi23a.pdf)
 
+19. [](https://openaccess.thecvf.com/content/CVPR2023W/NTIRE/papers/Yu_DIPNet_Efficiency_Distillation_and_Iterative_Pruning_for_Image_Super-Resolution_CVPRW_2023_paper.pdf)
+
 [mathcha](https://www.mathcha.io/editor)
 
 
