@@ -4257,15 +4257,15 @@ class DepthWiseOpt(torch.nn.Module):
 
 
 class PointOneChannelOpt(nn.Module):
-    def __init__(self, in_ch=1, out_ch=16):
+    def __init__(self, in_ch=1, out_ch=16, n_feature=32):
         super().__init__()
         # 优化1：减少通道数(64->32)和层数
         self.conv = nn.Sequential(
-            nn.Conv2d(in_ch, 32, 1),
+            nn.Conv2d(in_ch, n_feature, 1),
             nn.ReLU(inplace=True),
-            nn.Conv2d(32, 32, 1),
+            nn.Conv2d(n_feature, n_feature, 1),
             nn.ReLU(inplace=True),
-            nn.Conv2d(32, out_ch, 1)
+            nn.Conv2d(n_feature, out_ch, 1)
         )
 
     def forward(self, x):
@@ -4273,10 +4273,10 @@ class PointOneChannelOpt(nn.Module):
         return XQuantize.apply(self.conv(x).clamp(-128, 127))
 
 class PointConvOpt(nn.Module):
-    def __init__(self, num_channels=16):
+    def __init__(self, n_feature=32):
         super().__init__()
         # 优化2：共享基础卷积层减少参数
-        self.base_conv = PointOneChannelOpt()
+        self.base_conv = PointOneChannelOpt(n_feature=n_feature)
         
     def forward(self, xh, xl, h, s, l):
         if s:
@@ -4291,15 +4291,15 @@ class PointConvOpt(nn.Module):
             return self.base_conv(xh if h else xl)
 
 class UpOneChannelOpt(nn.Module):
-    def __init__(self, in_ch=1, out_ch=16):
+    def __init__(self, in_ch=1, out_ch=16, n_feature=32):
         super().__init__()
-        # 优化4：减少层数(5层->3层)和通道数
+        # 优化1：减少通道数(64->32)和层数
         self.conv = nn.Sequential(
-            nn.Conv2d(in_ch, 32, 1),
+            nn.Conv2d(in_ch, n_feature, 1),
             nn.ReLU(inplace=True),
-            nn.Conv2d(32, 32, 1),
+            nn.Conv2d(n_feature, n_feature, 1),
             nn.ReLU(inplace=True),
-            nn.Conv2d(32, out_ch, 1)
+            nn.Conv2d(n_feature, out_ch, 1)
         )
 
     def forward(self, x):
@@ -4307,10 +4307,10 @@ class UpOneChannelOpt(nn.Module):
         return XQuantize.apply(self.conv(x).clamp(-128, 127))
 
 class UpConvOpt(nn.Module):
-    def __init__(self, num_channels=16):
+    def __init__(self, n_feature=32):
         super().__init__()
         # 优化5：共享基础卷积层
-        self.base_conv = UpOneChannelOpt()
+        self.base_conv = UpOneChannelOpt(n_feature=n_feature)
         
     def forward(self, xh, xl, h, s, l):
         if s:
@@ -4324,12 +4324,12 @@ class UpConvOpt(nn.Module):
             return self.base_conv(xh if h else xl)
 
 class TinyLUTNetOpt(nn.Module):
-    def __init__(self, upscale=4):
+    def __init__(self, upscale=4, n_feature=32):
         super().__init__()
         # 初始化各模块
         self.depthwise = DepthWiseOpt()  # 假设已定义
-        self.pointconv = PointConvOpt()
-        self.upconv = UpConvOpt()
+        self.pointconv = PointConvOpt(n_feature=n_feature)
+        self.upconv = UpConvOpt(n_feature=n_feature)
         self.upscale = upscale
         
         # 量化参数（减少参数数量）
@@ -4343,6 +4343,7 @@ class TinyLUTNetOpt(nn.Module):
 
     def forward(self, x):
         # 启用混合精度训练
+        # with torch.cuda.amp.autocast():
         with torch.amp.autocast('cuda'):
             # 输入预处理
             is_trs = x.max() <= 1

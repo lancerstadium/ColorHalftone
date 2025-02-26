@@ -4,7 +4,7 @@ from torchvision.transforms import ToTensor, Resize, Normalize, RandomCrop, Gray
 from torch.utils.data import DataLoader
 
 from wllab.common.lut import lut_load
-from wllab.network.lut import SRNet, SPF_LUT_net, MuLUT, LogicLUTNet
+from wllab.network.lut import SRNet, SPF_LUT_net, MuLUT, LogicLUTNet, TinyLUTNetOpt
 from wllab.network.ed import EnDeNet
 from wllab.network.ht import HalftoneNet
 from wllab.data.data import SingleDataset, PairedDataset
@@ -46,7 +46,8 @@ def EVAL_LUT_SR():
     # lut_load(model, ['s', 'd', 'y'], 2, 8, 4, 4, './lut')
     # lut_load(model, ['s', 'd', 'y'], 2, 8, 4, 4, './lut', '', '_c1')
     # lut_load(model, ['s', 'd', 'y'], 2, 8, 4, 4, './lut', '', '_c2')
-    model = LogicLUTNet(kernel_size=3, upscale=4, n_feature=64)
+    # model = LogicLUTNet(kernel_size=3, upscale=4, n_feature=64)
+    model = TinyLUTNetOpt(upscale=4, n_feature=64)
 
     ints = torch.rand(1, 1, 48, 48)
     # print(model.weight_s1_s[0:4])

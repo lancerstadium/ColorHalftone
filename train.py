@@ -65,14 +65,14 @@ def TRAIN_SR():
         upscale_factor=4,
         is_DIV2K=True
     )
-    pdataloader = DataLoader(pdataset, batch_size=16, shuffle=False)
+    pdataloader = DataLoader(pdataset, batch_size=8, shuffle=False)
 
     # 初始化模型
     # model = SRNet(mode='SxN', nf=64, upscale=4, dense=True)
     # model = BaseSRNets(nf=64, scale=4, modes="sdy", stages=2)
     # model = HalftoneNet(in_channels=3, num_classes=64, num_features=128, block_size=3, scale=4)
     # model = LogicLUTNet(kernel_size=3, upscale=4, n_feature=64)
-    model = TinyLUTNetOpt()
+    model = TinyLUTNetOpt(upscale=4, n_feature=64)
 
     # 开始训练
     train_sr(
