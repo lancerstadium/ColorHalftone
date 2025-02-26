@@ -84,7 +84,8 @@ def TRAIN_SR():
         save_path="./checkpoints",
         is_self_ensemble=True,
         pad=2,
-        is_rev=True
+        is_rev=True,
+        is_acc=True
     )
 
 
