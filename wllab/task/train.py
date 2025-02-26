@@ -109,7 +109,11 @@ def train_sr(
     load_path=None,
     num_epochs=50,
     save_epoch=20,
-    lr=1e-4,
+    lr0: float = 1e-3, 
+    lr1: float = 1e-4,
+    betas: tuple = (0.9, 0.999), 
+    eps: float = 1e-8, 
+    weight_decay: float = 0,
     save_path="./checkpoints",
     is_self_ensemble = False,
     pad = 1,
@@ -126,9 +130,16 @@ def train_sr(
         model.load_state_dict(checkpoint["model_state_dict"])
     
     # perceptual_loss = PerceptualLoss().to(device)
-    # 学习率调度器
-    optimizer = optim.Adam(model.parameters(), lr=lr)
-    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[10, 20, 30, 40], gamma=0.1)
+    optimizer = optim.Adam(model.parameters(), lr=lr0, betas=betas, eps=eps, weight_decay=weight_decay)
+    # 初始化调度器
+    totalIter = num_epochs * pdataloader.batch_size
+    if lr1 < 0:
+        lf = lambda x: (((1 + math.cos(x * math.pi / totalIter)) / 2) ** 1.0) * 0.8 + 0.2
+    else:
+        lr_b = lr1 / lr0
+        lr_a = 1 - lr_b
+        lf = lambda x: (((1 + math.cos(x * math.pi / totalIter)) / 2) ** 1.0) * lr_a + lr_b
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lf)
 
     # 创建保存路径
     os.makedirs(save_path, exist_ok=True)
