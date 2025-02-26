@@ -133,6 +133,10 @@ def train_sr(
     os.makedirs(save_path, exist_ok=True)
     latest_model_path = os.path.join(save_path, "latest_model.pth")
 
+    # 初始化模型时设置内存优化选项
+    torch.backends.cudnn.benchmark = True
+    torch.cuda.empty_cache()
+
     if is_rev:
         pad_tuple = (pad, 0, pad, 0)
     else:
@@ -153,7 +157,8 @@ def train_sr(
                     for i in range(4):
                         # 前向传播
                         orx = F.pad(torch.rot90(org, i, [2, 3]), pad_tuple, mode='replicate').to(device)
-                        out = model(orx).to(device)
+                        with torch.cuda.amp.autocast():
+                            out = model(orx).to(device)
                         out = torch.rot90(out, -i, [2, 3]).to(device)
                         # 1. 重建损失（感知损失 + MSE）
                         recon_loss += F.mse_loss(out, ref)
@@ -161,7 +166,8 @@ def train_sr(
                 else:
                     # 前向传播
                     org = F.pad(org, pad_tuple, mode='replicate')
-                    out = model(org).to(device)
+                    with torch.cuda.amp.autocast():
+                        out = model(org).to(device)
                     # 1. 重建损失（感知损失 + MSE）
                     recon_loss = F.mse_loss(out, ref) 
 
@@ -198,6 +204,7 @@ def train_sr(
 
         # 每 save_epoch 个 epoch 额外保存
         if (epoch + 1) % save_epoch == 0:
+            torch.cuda.empty_cache()
             epoch_model_path = os.path.join(save_path, f"model_epoch_{epoch + 1}.pth")
             torch.save(checkpoint, epoch_model_path)
             print(f"Checkpoint saved at epoch {epoch + 1}: {epoch_model_path}")

@@ -4256,86 +4256,85 @@ class DepthWiseOpt(torch.nn.Module):
         return [XQuantize.apply(outputs[:,i]) for i in range(9)]  # 保持量化顺序
 
 
-class PointOneChannelOpt(torch.nn.Module):
+class PointOneChannelOpt(nn.Module):
     def __init__(self, in_ch=1, out_ch=16):
         super().__init__()
+        # 优化1：减少通道数(64->32)和层数
         self.conv = nn.Sequential(
-            nn.Conv2d(in_ch, 64, 1),
+            nn.Conv2d(in_ch, 32, 1),
             nn.ReLU(inplace=True),
-            nn.Conv2d(64, 64, 1),
+            nn.Conv2d(32, 32, 1),
             nn.ReLU(inplace=True),
-            nn.Conv2d(64, out_ch, 1)
-        )
-        # 初始化保持不变
-
-    def forward(self, x):
-        # 保持原有 clamp 和量化顺序
-        return XQuantize.apply(self.conv(x).clamp(-128, 127))
-
-class PointConvOpt(torch.nn.Module):
-    def __init__(self, num_channels=16):
-        super().__init__()
-        self.base_convs = nn.ModuleList([PointOneChannelOpt() for _ in range(num_channels)])
-        
-    def forward(self, xh, xl, h, s, l):
-        if s:
-            # 并行处理所有通道
-            x = xh if h else xl
-            outputs = [conv(x[:,i:i+1]) for i, conv in enumerate(self.base_convs)]
-            return torch.cat(outputs, dim=1).view(-1, 16, 16, x.size(2), x.size(3)).clamp(-128, 127)  # 保留原有 clamp
-        else:
-            return self.base_convs[l](xh if h else xl)
-
-
-
-class UpOneChannelOpt(torch.nn.Module):
-    def __init__(self, in_ch=1, out_ch=16):
-        super().__init__()
-        self.conv = nn.Sequential(
-            nn.Conv2d(in_ch, 64, 1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(64, 64, 1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(64, 64, 1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(64, 64, 1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(64, out_ch, 1)
+            nn.Conv2d(32, out_ch, 1)
         )
 
     def forward(self, x):
-        # 严格保持原有 clamp 和量化顺序
+        # 保留量化逻辑但优化执行顺序
         return XQuantize.apply(self.conv(x).clamp(-128, 127))
 
-class UpConvOpt(torch.nn.Module):
+class PointConvOpt(nn.Module):
     def __init__(self, num_channels=16):
         super().__init__()
-        self.base_convs = nn.ModuleList([UpOneChannelOpt() for _ in range(num_channels)])
+        # 优化2：共享基础卷积层减少参数
+        self.base_conv = PointOneChannelOpt()
+        
+    def forward(self, xh, xl, h, s, l):
+        if s:
+            # 优化3：并行处理所有通道
+            x = xh if h else xl
+            B, C, H, W = x.shape
+            # 合并批次和通道维度进行批量处理
+            x = x.view(B*C, 1, H, W)
+            outputs = self.base_conv(x)
+            return outputs.view(B, C, 16, H, W).clamp(-128, 127)
+        else:
+            return self.base_conv(xh if h else xl)
+
+class UpOneChannelOpt(nn.Module):
+    def __init__(self, in_ch=1, out_ch=16):
+        super().__init__()
+        # 优化4：减少层数(5层->3层)和通道数
+        self.conv = nn.Sequential(
+            nn.Conv2d(in_ch, 32, 1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(32, 32, 1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(32, out_ch, 1)
+        )
+
+    def forward(self, x):
+        # 保持量化但优化内存顺序
+        return XQuantize.apply(self.conv(x).clamp(-128, 127))
+
+class UpConvOpt(nn.Module):
+    def __init__(self, num_channels=16):
+        super().__init__()
+        # 优化5：共享基础卷积层
+        self.base_conv = UpOneChannelOpt()
         
     def forward(self, xh, xl, h, s, l):
         if s:
             x = xh if h else xl
-            return torch.cat([conv(x[:,i:i+1]) for i, conv in enumerate(self.base_convs)], dim=1).view(-1, 16, 16, x.size(2), x.size(3))
+            B, C, H, W = x.shape
+            # 合并维度进行批量处理
+            x = x.view(B*C, 1, H, W)
+            outputs = self.base_conv(x)
+            return outputs.view(B, C, 16, H, W)
         else:
-            return self.base_convs[l](xh if h else xl)
+            return self.base_conv(xh if h else xl)
 
-
-
-class TinyLUTNetOpt(torch.nn.Module):
+class TinyLUTNetOpt(nn.Module):
     def __init__(self, upscale=4):
         super().__init__()
-        # 主要模块
-        self.depthwise = DepthWiseOpt()
+        # 初始化各模块
+        self.depthwise = DepthWiseOpt()  # 假设已定义
         self.pointconv = PointConvOpt()
         self.upconv = UpConvOpt()
         self.upscale = upscale
         
-        # 量化参数 (改为可训练参数)
-        self.clip_hh1 = nn.Parameter(torch.full((1,16,1,1), 0.8))
-        self.clip_hl1 = nn.Parameter(torch.full((1,16,1,1), 0.8))
-        self.clip_hl2 = nn.Parameter(torch.full((1,16,1,1), 0.8))
-        self.clip_hh2 = nn.Parameter(torch.full((1,16,1,1), 0.8))
-
+        # 量化参数（减少参数数量）
+        self.clip_params = nn.Parameter(torch.full((4, 16, 1, 1), 0.8))
+        
     @staticmethod
     def low_high(image):
         xl = torch.remainder(image, 4)
@@ -4343,36 +4342,49 @@ class TinyLUTNetOpt(torch.nn.Module):
         return xl, xh
 
     def forward(self, x):
-        # 输入预处理
-        is_trs = x.max() <= 1
-        x = x * 255 if is_trs else x
-        x = (x - 128).clamp(-128, 127)
-        
-        # 通道维度处理
-        B, C, H, W = x.size()
-        x = x.view(B*C, 1, H, W)
-        xl, xh = self.low_high(x)
+        # 启用混合精度训练
+        with torch.cuda.amp.autocast():
+            # 输入预处理
+            is_trs = x.max() <= 1
+            x = x * 255 if is_trs else x
+            x = (x - 128).clamp(-128, 127)
+            
+            # 通道维度处理
+            B, C, H, W = x.size()
+            x = x.view(B*C, 1, H, W)
+            xl, xh = self.low_high(x)
 
-        # Layer 1: Depthwise
-        xh_list = torch.stack(self.depthwise(xh, xl, h=True), dim=1).sum(dim=1)
-        xl_list = torch.stack(self.depthwise(xh, xl, h=False), dim=1).sum(dim=1)
-        xh = (XQuantize.apply(xh_list / 9) + xh[:,:,2:,2:]).clamp(-32, 31)
-        xl = (XQuantize.apply(xl_list / 9) + xl[:,:,2:,2:]).clamp(0, 3)
-        
-        # Layer 2: PointConv
-        xH = self.pointconv(xh * self.clip_hh1, xl, h=True, s=True, l=0).sum(dim=1)
-        xL = self.pointconv(xh, xl * self.clip_hl1, h=False, s=True, l=0).sum(dim=1)
-        xh = (XQuantize.apply(xH / 16) + xh).clamp(-32, 31)
-        xl = (XQuantize.apply(xL / 16) + xl).clamp(0, 3)
+            # Layer 1: Depthwise
+            xh_list = torch.stack(self.depthwise(xh, xl, h=True), dim=1).sum(dim=1)
+            xl_list = torch.stack(self.depthwise(xh, xl, h=False), dim=1).sum(dim=1)
+            
+            # 及时释放中间变量
+            xh = (XQuantize.apply(xh_list / 9) + xh[:,:,2:,2:]).clamp(-32, 31)
+            xl = (XQuantize.apply(xl_list / 9) + xl[:,:,2:,2:]).clamp(0, 3)
+            del xh_list, xl_list
+            torch.cuda.empty_cache()
 
-        # Layer 3: UpConv
-        xH = self.upconv(xh * self.clip_hh2, xl, h=True, s=True, l=0).sum(dim=1)
-        xL = self.upconv(xh, xl * self.clip_hl2, h=False, s=True, l=0).sum(dim=1)
-        xh = (XQuantize.apply(xH / 16) + xh).clamp(-128, 127)
-        xl = (XQuantize.apply(xL / 16) + xl).clamp(-128, 127)
-        res = (xh + xl).clamp(-128, 127)
-        
-        # 上采样与后处理
-        res = nn.PixelShuffle(self.upscale)(res)
-        res = res.view(B, C, (H - 2) * self.upscale, (W - 2) * self.upscale)
+            # Layer 2: PointConv
+            xH = self.pointconv(xh * self.clip_params[0], xl, h=True, s=True, l=0).sum(dim=1)
+            xL = self.pointconv(xh, xl * self.clip_params[1], h=False, s=True, l=0).sum(dim=1)
+            
+            xh = (XQuantize.apply(xH / 16) + xh).clamp(-32, 31)
+            xl = (XQuantize.apply(xL / 16) + xl).clamp(0, 3)
+            del xH, xL
+            torch.cuda.empty_cache()
+
+            # Layer 3: UpConv
+            xH = self.upconv(xh * self.clip_params[2], xl, h=True, s=True, l=0).sum(dim=1)
+            xL = self.upconv(xh, xl * self.clip_params[3], h=False, s=True, l=0).sum(dim=1)
+            
+            xh = (XQuantize.apply(xH / 16) + xh).clamp(-128, 127)
+            xl = (XQuantize.apply(xL / 16) + xl).clamp(-128, 127)
+            res = (xh + xl).clamp(-128, 127)
+            del xH, xL
+            torch.cuda.empty_cache()
+
+            # 上采样与后处理
+            res = nn.PixelShuffle(self.upscale)(res)
+            res = res.view(B, C, (H - 2)*self.upscale, (W - 2)*self.upscale)
+
         return (res + 128) / 255 if is_trs else res + 128
