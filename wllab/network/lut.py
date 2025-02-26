@@ -4276,7 +4276,8 @@ class PointConvOpt(nn.Module):
     def __init__(self, n_feature=32):
         super().__init__()
         # 优化2：共享基础卷积层减少参数
-        self.base_conv = PointOneChannelOpt(n_feature=n_feature)
+        self.msb_conv = PointOneChannelOpt(n_feature=n_feature)
+        self.lsb_conv = PointOneChannelOpt(n_feature=n_feature)
         
     def forward(self, xh, xl, h, s, l):
         if s:
@@ -4285,10 +4286,10 @@ class PointConvOpt(nn.Module):
             B, C, H, W = x.shape
             # 合并批次和通道维度进行批量处理
             x = x.view(B*C, 1, H, W)
-            outputs = self.base_conv(x)
+            outputs = self.msb_conv(x) if h else self.lsb_conv(x)
             return outputs.view(B, C, 16, H, W).clamp(-128, 127)
         else:
-            return self.base_conv(xh if h else xl)
+            return self.msb_conv(xh) if h else self.lsb_conv(xl)
 
 class UpOneChannelOpt(nn.Module):
     def __init__(self, in_ch=1, out_ch=16, n_feature=32):
@@ -4296,6 +4297,10 @@ class UpOneChannelOpt(nn.Module):
         # 优化1：减少通道数(64->32)和层数
         self.conv = nn.Sequential(
             nn.Conv2d(in_ch, n_feature, 1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(n_feature, n_feature, 1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(n_feature, n_feature, 1),
             nn.ReLU(inplace=True),
             nn.Conv2d(n_feature, n_feature, 1),
             nn.ReLU(inplace=True),
@@ -4309,8 +4314,8 @@ class UpOneChannelOpt(nn.Module):
 class UpConvOpt(nn.Module):
     def __init__(self, n_feature=32):
         super().__init__()
-        # 优化5：共享基础卷积层
-        self.base_conv = UpOneChannelOpt(n_feature=n_feature)
+        self.msb_conv = UpOneChannelOpt(n_feature=n_feature)
+        self.lsb_conv = UpOneChannelOpt(n_feature=n_feature)
         
     def forward(self, xh, xl, h, s, l):
         if s:
@@ -4318,10 +4323,10 @@ class UpConvOpt(nn.Module):
             B, C, H, W = x.shape
             # 合并维度进行批量处理
             x = x.view(B*C, 1, H, W)
-            outputs = self.base_conv(x)
+            outputs = self.msb_conv(x) if h else self.lsb_conv(x)
             return outputs.view(B, C, 16, H, W)
         else:
-            return self.base_conv(xh if h else xl)
+            return self.msb_conv(xh) if h else self.lsb_conv(xl)
 
 class TinyLUTNetOpt(nn.Module):
     def __init__(self, upscale=4, n_feature=32):
