@@ -80,7 +80,7 @@ def TRAIN_SR():
         pdataloader=pdataloader,
         load_path=None,
         num_epochs=2000,
-        lr=1e-5,
+        lr=3e-6,
         save_path="./checkpoints",
         is_self_ensemble=True,
         pad=2,
