@@ -4383,9 +4383,9 @@ class TinyLUTNetOpt(nn.Module):
             xH = self.upconv(xh * self.clip_params[2], xl, h=True, s=True, l=0).sum(dim=1)
             xL = self.upconv(xh, xl * self.clip_params[3], h=False, s=True, l=0).sum(dim=1)
             
-            xh = (XQuantize.apply(xH / 16) + xh).clamp(-128, 127)
-            xl = (XQuantize.apply(xL / 16) + xl).clamp(-128, 127)
-            res = (xh + xl).clamp(-128, 127)
+            xh = (XQuantize.apply(xH / 16) + xh).clamp(-32, 31)
+            xl = (XQuantize.apply(xL / 16) + xl).clamp(0, 3)
+            res = (xh * 4 + xl).clamp(-128, 127)
             del xH, xL
             torch.cuda.empty_cache()
 
