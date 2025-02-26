@@ -86,7 +86,8 @@ def EVAL_LUT_SR():
             vdataloader,
             './checkpoints/latest_model.pth',
             f'./results/{k}',
-            0
+            pad=2,
+            is_rev=True
         )
 
 def EVAL_LUT_SR1():
