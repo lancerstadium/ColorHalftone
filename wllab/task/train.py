@@ -171,8 +171,7 @@ def train_sr(
                     for i in range(4):
                         # 前向传播
                         orx = F.pad(torch.rot90(org, i, [2, 3]), pad_tuple, mode='replicate').to(device)
-                        with torch.cuda.amp.autocast():
-                            out = model(orx).to(device)
+                        out = model(orx).to(device)
                         if is_acc:
                             out += torch.rot90(out, -i, [2, 3]).to(device)
                         else:
@@ -186,8 +185,7 @@ def train_sr(
                 else:
                     # 前向传播
                     org = F.pad(org, pad_tuple, mode='replicate')
-                    with torch.cuda.amp.autocast():
-                        out = model(org).to(device)
+                    out = model(org).to(device)
                     # 1. 重建损失（感知损失 + MSE）
                     recon_loss = F.mse_loss(out, ref) 
 

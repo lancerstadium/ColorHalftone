@@ -4414,8 +4414,8 @@ class TinyLUTNetOpt(nn.Module):
 
     def forward(self, x):
         # 启用混合精度训练
-        with torch.cuda.amp.autocast():
-        # with torch.amp.autocast('cuda'):
+        # with torch.cuda.amp.autocast():
+        with torch.amp.autocast('cuda'):
             # 输入预处理
             is_trs = x.max() <= 1
             x = x * 255 if is_trs else x
