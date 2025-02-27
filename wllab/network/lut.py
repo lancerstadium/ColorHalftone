@@ -4400,12 +4400,11 @@ class TinyLUTNetOpt(nn.Module):
         self.depthwise = DepthWiseOpt(is_pad=True)
         self.pointwise = PointConvOpt(upscale=2, out_ch=16,n_feature=n_feature, inner_shared=2, row_shared=False)
         self.updepth = DepthWiseOpt(is_pad=True)
-        self.uppoint = PointConvOpt(upscale=2, out_ch=16,n_feature=n_feature, inner_shared=2, row_shared=True)
         self.upconv = UpConvOpt(n_feature=n_feature)
         self.upscale = upscale
         
         # 量化参数（减少参数数量）
-        self.clip_params = nn.Parameter(torch.full((13, upscale * upscale, 1, 1), 0.8))
+        self.clip_params = nn.Parameter(torch.full((11, upscale * upscale, 1, 1), 0.8))
         
     @staticmethod
     def low_high(image):
@@ -4459,8 +4458,8 @@ class TinyLUTNetOpt(nn.Module):
             torch.cuda.empty_cache()
 
             # Concat ResBlock
-            xh = XQuantize.apply(xh * (1 - self.clip_params[8]) + xhl * self.clip_params[8]).clamp(-32, 31)
-            xl = XQuantize.apply(xl * (1 - self.clip_params[9]) + xll * self.clip_params[9]).clamp(0, 3)
+            xh = XQuantize.apply(xh * (1 - self.clip_params[2]) + xhl * self.clip_params[2]).clamp(-32, 31)
+            xl = XQuantize.apply(xl * (1 - self.clip_params[3]) + xll * self.clip_params[3]).clamp(0, 3)
             xll = xl
             xhl = xh
 
@@ -4475,8 +4474,8 @@ class TinyLUTNetOpt(nn.Module):
             torch.cuda.empty_cache()
 
             # Layer 4: Pointwise
-            xH = self.pointwise(xh * self.clip_params[2], xl, h=True, s=True, l=0).sum(dim=1)
-            xL = self.pointwise(xh, xl * self.clip_params[3], h=False, s=True, l=0).sum(dim=1)
+            xH = self.pointwise(xh * self.clip_params[4], xl, h=True, s=True, l=0).sum(dim=1)
+            xL = self.pointwise(xh, xl * self.clip_params[5], h=False, s=True, l=0).sum(dim=1)
             
             xh = (XQuantize.apply(xH / 16) + xh).clamp(-32, 31)
             xl = (XQuantize.apply(xL / 16) + xl).clamp(0, 3)
@@ -4484,8 +4483,8 @@ class TinyLUTNetOpt(nn.Module):
             torch.cuda.empty_cache()
 
             # Concat ResBlock
-            xh = XQuantize.apply(xh * (1 - self.clip_params[10]) + xhl * self.clip_params[10]).clamp(-32, 31)
-            xl = XQuantize.apply(xl * (1 - self.clip_params[11]) + xll * self.clip_params[11]).clamp(0, 3)
+            xh = XQuantize.apply(xh * (1 - self.clip_params[6]) + xhl * self.clip_params[6]).clamp(-32, 31)
+            xl = XQuantize.apply(xl * (1 - self.clip_params[7]) + xll * self.clip_params[7]).clamp(0, 3)
             del xhl, xll
 
             # Layer 5: UpDepth
@@ -4498,18 +4497,9 @@ class TinyLUTNetOpt(nn.Module):
             del xH, xL
             torch.cuda.empty_cache()
 
-            # Layer 6: Pointwise
-            xH = self.pointwise(xh * self.clip_params[4], xl, h=True, s=True, l=0).sum(dim=1)
-            xL = self.pointwise(xh, xl * self.clip_params[5], h=False, s=True, l=0).sum(dim=1)
-            
-            xh = (XQuantize.apply(xH / 16) + xh).clamp(-32, 31)
-            xl = (XQuantize.apply(xL / 16) + xl).clamp(0, 3)
-            del xH, xL
-            torch.cuda.empty_cache()
-
-            # Layer 7: UpConv
-            xH = self.upconv(xh * self.clip_params[6], xl, h=True, s=True, l=0).sum(dim=1)
-            xL = self.upconv(xh, xl * self.clip_params[7], h=False, s=True, l=0).sum(dim=1)
+            # Layer 6: UpConv
+            xH = self.upconv(xh * self.clip_params[8], xl, h=True, s=True, l=0).sum(dim=1)
+            xL = self.upconv(xh, xl * self.clip_params[9], h=False, s=True, l=0).sum(dim=1)
             
             xh = (XQuantize.apply(xH / 16) + xh).clamp(-32, 31)
             xl = (XQuantize.apply(xL / 16) + xl).clamp(0, 3)
@@ -4517,7 +4507,7 @@ class TinyLUTNetOpt(nn.Module):
             torch.cuda.empty_cache()
 
             # Accumulate ResBlock
-            res = XQuantize.apply(((xh * 4 + xl).clamp(-128, 127) + x[:,:,2:,2:]) * self.clip_params[12]).clamp(-128, 127)
+            res = XQuantize.apply(((xh * 4 + xl).clamp(-128, 127) + x[:,:,2:,2:]) * self.clip_params[10]).clamp(-128, 127)
 
             # 上采样与后处理
             res = nn.PixelShuffle(self.upscale)(res)
