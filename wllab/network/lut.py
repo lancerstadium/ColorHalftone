@@ -4340,7 +4340,7 @@ class TinyLUTNetOpt(nn.Module):
         self.upscale = upscale
         
         # 量化参数（减少参数数量）
-        self.clip_params = nn.Parameter(torch.full((6, 16, 1, 1), 0.8))
+        self.clip_params = nn.Parameter(torch.full((7, 16, 1, 1), 0.8))
         
     @staticmethod
     def low_high(image):
@@ -4406,7 +4406,7 @@ class TinyLUTNetOpt(nn.Module):
             
             xh = (XQuantize.apply(xH / 16) + xh).clamp(-32, 31)
             xl = (XQuantize.apply(xL / 16) + xl).clamp(0, 3)
-            res = ((xh * 2 + xl) + XQuantize.apply(x[:,:,2:,2:] / 2)).clamp(-128, 127)
+            res = XQuantize.apply((xh * 4 + xl).clamp(-128, 127) * (1 - self.clip_params[3]) + x[:,:,2:,2:] * self.clip_params[6]).clamp(-128, 127)
             del xH, xL
             torch.cuda.empty_cache()
 
