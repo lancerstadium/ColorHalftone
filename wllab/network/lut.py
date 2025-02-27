@@ -4273,15 +4273,19 @@ class PointOneChannelOpt(nn.Module):
 
     def forward(self, x):
         # 保留量化逻辑但优化执行顺序
-        return XQuantize.apply(self.conv(x) + self.bias.view(1, -1, 1, 1)).clamp(-128, 127)
+        return XQuantize.apply(self.conv(x)).clamp(-128, 127)
 
 class PointConvOpt(nn.Module):
-    def __init__(self, out_ch=16, n_feature=32):
+    def __init__(self, upscale=4, out_ch=16, n_feature=32):
         super().__init__()
         self.out_ch = out_ch
+        self.upscale = upscale
         # 优化2：共享基础卷积层减少参数
-        self.msb_conv = PointOneChannelOpt(out_ch=out_ch, n_feature=n_feature)
-        self.lsb_conv = PointOneChannelOpt(out_ch=out_ch, n_feature=n_feature)
+        self.msb_conv = nn.ModuleList()
+        self.lsb_conv = nn.ModuleList()
+        for i in range(upscale ** 2):
+            self.msb_conv.append(PointOneChannelOpt(out_ch=out_ch, n_feature=n_feature))
+            self.lsb_conv.append(PointOneChannelOpt(out_ch=out_ch, n_feature=n_feature))
         
     def forward(self, xh, xl, h, s, l):
         if s:
@@ -4290,11 +4294,14 @@ class PointConvOpt(nn.Module):
             B, C, H, W = x.shape
             # 合并批次和通道维度进行批量处理
             x = x.view(B*C, 1, H, W)
-            outputs = self.msb_conv(x) if h else self.lsb_conv(x)
-            return outputs.view(B, C, self.out_ch, H, W).clamp(-128, 127)
+            outputs = []
+            for i in range(self.upscale ** 2):
+                outputs.append((self.msb_conv[i](x) if h else self.lsb_conv[i](x)).view(B, C, self.out_ch, H, W).clamp(-128, 127))
+            outputs = torch.mean(torch.stack(outputs, dim=1), dim=1)
+            return outputs
         else:
-            return self.msb_conv(xh) if h else self.lsb_conv(xl)
-
+            return (self.msb_conv[l](xh) if h else self.lsb_conv[l](xl)).view(B, C, self.out_ch, H, W).clamp(-128, 127)
+        
 class UpOneChannelOpt(nn.Module):
     def __init__(self, in_ch=1, out_ch=16, n_feature=32):
         super().__init__()
@@ -4338,9 +4345,9 @@ class TinyLUTNetOpt(nn.Module):
         # 初始化各模块
         self.down = DepthWise()
         self.depthconv = DepthWiseOpt(is_pad=True)
-        self.pointconv = PointConvOpt(out_ch=16,n_feature=n_feature)
+        self.pointconv = PointConvOpt(upscale=4, out_ch=16,n_feature=n_feature)
         self.depthwise = DepthWiseOpt(is_pad=True)
-        self.pointwise = PointConvOpt(out_ch=16,n_feature=n_feature)
+        self.pointwise = PointConvOpt(upscale=1, out_ch=16,n_feature=n_feature)
         self.updepth = DepthWiseOpt(is_pad=True)
         self.upconv = UpConvOpt(n_feature=n_feature)
         self.upscale = upscale
@@ -4356,8 +4363,8 @@ class TinyLUTNetOpt(nn.Module):
 
     def forward(self, x):
         # 启用混合精度训练
-        # with torch.cuda.amp.autocast():
-        with torch.amp.autocast('cuda'):
+        with torch.cuda.amp.autocast():
+        # with torch.amp.autocast('cuda'):
             # 输入预处理
             is_trs = x.max() <= 1
             x = x * 255 if is_trs else x
