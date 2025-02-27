@@ -4406,7 +4406,7 @@ class TinyLUTNetOpt(nn.Module):
             
             xh = (XQuantize.apply(xH / 16) + xh).clamp(-32, 31)
             xl = (XQuantize.apply(xL / 16) + xl).clamp(0, 3)
-            res = (xh * 4 + xl).clamp(-128, 127)
+            res = ((xh * 2 + xl) + XQuantize.apply(x[:,:,2:,2:] / 2)).clamp(-128, 127)
             del xH, xL
             torch.cuda.empty_cache()
 
