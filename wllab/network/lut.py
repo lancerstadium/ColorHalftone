@@ -4275,33 +4275,77 @@ class PointOneChannelOpt(nn.Module):
         # 保留量化逻辑但优化执行顺序
         return XQuantize.apply(self.conv(x)).clamp(-128, 127)
 
+# class PointConvOpt(nn.Module):
+#     def __init__(self, upscale=4, out_ch=16, n_feature=32):
+#         super().__init__()
+#         self.out_ch = out_ch
+#         self.upscale = upscale
+#         # 优化2：共享基础卷积层减少参数
+#         self.msb_conv = nn.ModuleList()
+#         self.lsb_conv = nn.ModuleList()
+#         for i in range(upscale ** 2):
+#             self.msb_conv.append(PointOneChannelOpt(out_ch=out_ch, n_feature=n_feature))
+#             self.lsb_conv.append(PointOneChannelOpt(out_ch=out_ch, n_feature=n_feature))
+        
+#     def forward(self, xh, xl, h, s, l):
+#         if s:
+#             # 优化3：并行处理所有通道
+#             x = xh if h else xl
+#             B, C, H, W = x.shape
+#             # 合并批次和通道维度进行批量处理
+#             x = x.view(B*C, 1, H, W)
+#             outputs = []
+#             for i in range(self.upscale ** 2):
+#                 outputs.append((self.msb_conv[i](x) if h else self.lsb_conv[i](x)).view(B, C, self.out_ch, H, W).clamp(-128, 127))
+#             outputs = torch.mean(torch.stack(outputs, dim=1), dim=1)
+#             return outputs
+#         else:
+#             return (self.msb_conv[l](xh) if h else self.lsb_conv[l](xl)).view(B, C, self.out_ch, H, W).clamp(-128, 127)
+        
+
 class PointConvOpt(nn.Module):
     def __init__(self, upscale=4, out_ch=16, n_feature=32):
         super().__init__()
         self.out_ch = out_ch
         self.upscale = upscale
-        # 优化2：共享基础卷积层减少参数
+        # 使用ModuleList存储卷积模块
         self.msb_conv = nn.ModuleList()
         self.lsb_conv = nn.ModuleList()
-        for i in range(upscale ** 2):
+        for _ in range(upscale ** 2):
             self.msb_conv.append(PointOneChannelOpt(out_ch=out_ch, n_feature=n_feature))
             self.lsb_conv.append(PointOneChannelOpt(out_ch=out_ch, n_feature=n_feature))
         
     def forward(self, xh, xl, h, s, l):
         if s:
-            # 优化3：并行处理所有通道
             x = xh if h else xl
             B, C, H, W = x.shape
-            # 合并批次和通道维度进行批量处理
             x = x.view(B*C, 1, H, W)
-            outputs = []
-            for i in range(self.upscale ** 2):
-                outputs.append((self.msb_conv[i](x) if h else self.lsb_conv[i](x)).view(B, C, self.out_ch, H, W).clamp(-128, 127))
-            outputs = torch.mean(torch.stack(outputs, dim=1), dim=1)
-            return outputs
+            
+            output = None
+            num_modules = self.upscale ** 2
+            for i in range(num_modules):
+                # 逐个处理每个卷积模块并累加结果
+                out_i = self.msb_conv[i](x) if h else self.lsb_conv[i](x)
+                out_i = out_i.view(B, C, self.out_ch, H, W).clamp(-128, 127)
+                if output is None:
+                    output = out_i
+                else:
+                    output += out_i
+                # 及时释放中间变量（可选）
+                del out_i
+            
+            # 计算均值并确保结果在正确设备上
+            output = XQuantize.apply(output / num_modules).clamp(-128, 127)
+            return output
         else:
-            return (self.msb_conv[l](xh) if h else self.lsb_conv[l](xl)).view(B, C, self.out_ch, H, W).clamp(-128, 127)
-        
+            # 处理单一路径
+            x = xh if h else xl
+            B, C, H, W = x.shape
+            x = x.view(B*C, 1, H, W)
+            out = self.msb_conv[l](x) if h else self.lsb_conv[l](x)
+            return out.view(B, C, self.out_ch, H, W).clamp(-128, 127)
+
+
 class UpOneChannelOpt(nn.Module):
     def __init__(self, in_ch=1, out_ch=16, n_feature=32):
         super().__init__()
@@ -4363,8 +4407,8 @@ class TinyLUTNetOpt(nn.Module):
 
     def forward(self, x):
         # 启用混合精度训练
-        with torch.cuda.amp.autocast():
-        # with torch.amp.autocast('cuda'):
+        # with torch.cuda.amp.autocast():
+        with torch.amp.autocast('cuda'):
             # 输入预处理
             is_trs = x.max() <= 1
             x = x * 255 if is_trs else x

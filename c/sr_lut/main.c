@@ -91,6 +91,23 @@ void TinyLUT_test() {
     TinyLUT_free(&mdl);
 }
 
+void Bicubic_test() {
+    char img_path[64];
+    int W, H, C, scale = 4;
+    uint8_t *X = (uint8_t *)stbi_load("../../test/org/9999x4.png", &W, &H, &C, 0);
+    int H2 = H * scale;
+    int W2 = W * scale;
+    uint8_t *Y = (uint8_t *)calloc(H2 * W2 * C, sizeof(uint8_t));
+
+    int32_t *X1 = (int32_t *)calloc(H * W * C, sizeof(int32_t));
+    int32_t *Y1 = (int32_t *)calloc(H2 * W2 * C, sizeof(int32_t));
+    Cast_s32_u8(X1, X, H * W * C);
+    Intp_bicubic_s32_hwc(Y1, X1, C, H, W, 4);
+    Cast_u8_s32(Y, Y1, H2 * W2 * C);
+    sprintf(img_path, "../../test/9999x4.bmp");
+    stbi_write_bmp(img_path, W2, H2, C, Y);
+}
+
 void Quant_s8_test() {
     int scale = 0, offset = 0;
     int8_t Qout[16];
@@ -122,6 +139,7 @@ void Quant_s16_test() {         // Error
 int main() {
     // MuLUT_test();
     // Quant_s16_test();
-    TinyLUT_test();
+    // TinyLUT_test();
+    Bicubic_test();
     return 0;
 }
