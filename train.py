@@ -91,9 +91,9 @@ def TRAIN_SR():
 
 # 主函数
 if __name__ == "__main__":
-    TRAIN_SR()
-    # import torch
-    # I = torch.randn(1, 3, 50, 50)
-    # model = TinyLUTNetOpt()
-    # O = model(I)
-    # print(O.shape)
+    # TRAIN_SR()
+    import torch
+    I = torch.randn(1, 3, 50, 50)
+    model = TinyLUTNetOpt()
+    O = model(I)
+    print(O.shape)

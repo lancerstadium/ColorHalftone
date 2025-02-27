@@ -4262,6 +4262,7 @@ class PointOneChannelOpt(nn.Module):
     def __init__(self, in_ch=1, out_ch=16, n_feature=32):
         super().__init__()
         # 优化1：减少通道数(64->32)和层数
+        self.bias = nn.Parameter(torch.zeros(out_ch))
         self.conv = nn.Sequential(
             nn.Conv2d(in_ch, n_feature, 1),
             nn.ReLU(inplace=True),
@@ -4272,7 +4273,7 @@ class PointOneChannelOpt(nn.Module):
 
     def forward(self, x):
         # 保留量化逻辑但优化执行顺序
-        return XQuantize.apply(self.conv(x).clamp(-128, 127))
+        return XQuantize.apply(self.conv(x) + self.bias.view(1, -1, 1, 1)).clamp(-128, 127)
 
 class PointConvOpt(nn.Module):
     def __init__(self, out_ch=16, n_feature=32):
@@ -4281,8 +4282,6 @@ class PointConvOpt(nn.Module):
         # 优化2：共享基础卷积层减少参数
         self.msb_conv = PointOneChannelOpt(out_ch=out_ch, n_feature=n_feature)
         self.lsb_conv = PointOneChannelOpt(out_ch=out_ch, n_feature=n_feature)
-        self.msb_bias = nn.Parameter(torch.zeros(out_ch))
-        self.lsb_bias = nn.Parameter(torch.zeros(out_ch))
         
     def forward(self, xh, xl, h, s, l):
         if s:
@@ -4292,11 +4291,9 @@ class PointConvOpt(nn.Module):
             # 合并批次和通道维度进行批量处理
             x = x.view(B*C, 1, H, W)
             outputs = self.msb_conv(x) if h else self.lsb_conv(x)
-            outputs = outputs + self.msb_bias.view(1, -1, 1, 1) if h else outputs + self.lsb_bias.view(1, -1, 1, 1)
             return outputs.view(B, C, self.out_ch, H, W).clamp(-128, 127)
         else:
-            output = self.msb_conv(xh) if h else self.lsb_conv(xl)
-            return output + self.msb_bias.view(1, -1, 1, 1) if h else output + self.lsb_bias.view(1, -1, 1, 1)
+            return self.msb_conv(xh) if h else self.lsb_conv(xl)
 
 class UpOneChannelOpt(nn.Module):
     def __init__(self, in_ch=1, out_ch=16, n_feature=32):
