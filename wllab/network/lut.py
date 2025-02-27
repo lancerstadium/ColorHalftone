@@ -4396,7 +4396,7 @@ class TinyLUTNetOpt(nn.Module):
         # 初始化各模块
         self.down = DepthWise()
         self.depthconv = DepthWiseOpt(is_pad=True)
-        self.pointconv = PointConvOpt(upscale=4, out_ch=16,n_feature=n_feature // 4, inner_shared=True)
+        self.pointconv = PointConvOpt(upscale=4, out_ch=16,n_feature=n_feature // 2, inner_shared=True)
         self.depthwise = DepthWiseOpt(is_pad=True)
         self.pointwise = PointConvOpt(upscale=1, out_ch=16,n_feature=n_feature, inner_shared=True)
         self.updepth = DepthWiseOpt(is_pad=True)
