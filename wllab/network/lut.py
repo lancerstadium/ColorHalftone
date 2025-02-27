@@ -4264,10 +4264,10 @@ class PointOneChannelOpt(nn.Module):
         # 优化1：减少通道数(64->32)和层数
         self.bias = nn.Parameter(torch.zeros(out_ch))
         self.conv = nn.Sequential(
-            nn.Conv2d(in_ch, in_ch, 1),
+            nn.Conv2d(in_ch, n_feature, 1),
             nn.ReLU(inplace=True),
             shared_module if shared_module else nn.Sequential(
-                nn.Conv2d(in_ch, out_ch, 1),
+                nn.Conv2d(n_feature, out_ch, 1)
             ),
         )
 
@@ -4312,9 +4312,7 @@ class PointConvOpt(nn.Module):
         self.msb_conv = nn.ModuleList()
         self.lsb_conv = nn.ModuleList()
         self.shard_module = nn.Sequential(
-            nn.Conv2d(in_ch, n_feature, 1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(n_feature, out_ch, 1),
+            nn.Conv2d(n_feature, out_ch, 1)
         ) if inner_shared else None
 
         for _ in range(upscale ** 2):
