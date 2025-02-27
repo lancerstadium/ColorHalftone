@@ -4338,8 +4338,7 @@ class TinyLUTNetOpt(nn.Module):
         self.depthwise = DepthWiseOpt(is_pad=True)
         self.pointwise = PointConvOpt(out_ch=16,n_feature=n_feature)
         self.updepth = DepthWiseOpt(is_pad=True)
-        self.upconv1 = UpConvOpt(n_feature=n_feature)
-        self.upconv2 = UpConvOpt(n_feature=n_feature)
+        self.upconv = UpConvOpt(n_feature=n_feature)
         self.upscale = upscale
         
         # 量化参数（减少参数数量）
@@ -4436,9 +4435,9 @@ class TinyLUTNetOpt(nn.Module):
             del xH, xL
             torch.cuda.empty_cache()
 
-            # Layer 7: UpConv1
-            xH = self.upconv1(xh * self.clip_params[4], xl, h=True, s=True, l=0).sum(dim=1)
-            xL = self.upconv1(xh, xl * self.clip_params[5], h=False, s=True, l=0).sum(dim=1)
+            # Layer 7: UpConv
+            xH = self.upconv(xh * self.clip_params[4], xl, h=True, s=True, l=0).sum(dim=1)
+            xL = self.upconv(xh, xl * self.clip_params[5], h=False, s=True, l=0).sum(dim=1)
             
             xh = (XQuantize.apply(xH / 16) + xh).clamp(-32, 31)
             xl = (XQuantize.apply(xL / 16) + xl).clamp(0, 3)
@@ -4447,18 +4446,6 @@ class TinyLUTNetOpt(nn.Module):
 
             # Accumulate ResBlock
             res = XQuantize.apply((xh * 4 + xl).clamp(-128, 127) * (1 - self.clip_params[10]) + x[:,:,2:,2:] * self.clip_params[10]).clamp(-128, 127)
-
-
-            # Layer 8: UpConv
-            xH = self.upconv2(xh * self.clip_params[4], xl, h=True, s=True, l=0).sum(dim=1)
-            xL = self.upconv2(xh, xl * self.clip_params[5], h=False, s=True, l=0).sum(dim=1)
-            
-            xh = (XQuantize.apply(xH / 16) + xh).clamp(-32, 31)
-            xl = (XQuantize.apply(xL / 16) + xl).clamp(0, 3)
-            del xH, xL
-            torch.cuda.empty_cache()
-
-            res = XQuantize.apply((xh * 4 + xl).clamp(-128, 127))
 
             # 上采样与后处理
             res = nn.PixelShuffle(self.upscale)(res)
