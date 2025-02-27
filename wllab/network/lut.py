@@ -4259,15 +4259,15 @@ class DepthWiseOpt(torch.nn.Module):
 
 
 class PointOneChannelOpt(nn.Module):
-    def __init__(self, in_ch=1, out_ch=16, n_feature=32, shared_module : nn.Module = None):
+    def __init__(self, in_ch=1, out_ch=16, n_feature=16, shared_module : nn.Module = None):
         super().__init__()
         # 优化1：减少通道数(64->32)和层数
         self.bias = nn.Parameter(torch.zeros(out_ch))
         self.conv = nn.Sequential(
-            nn.Conv2d(in_ch, n_feature, 1),
+            nn.Conv2d(in_ch, in_ch, 1),
             nn.ReLU(inplace=True),
             shared_module if shared_module else nn.Sequential(
-                nn.Conv2d(n_feature, out_ch, 1)
+                nn.Conv2d(in_ch, out_ch, 1),
             ),
         )
 
@@ -4304,7 +4304,7 @@ class PointOneChannelOpt(nn.Module):
         
 
 class PointConvOpt(nn.Module):
-    def __init__(self, upscale=4, out_ch=16, n_feature=32, inner_shared=False):
+    def __init__(self, upscale=4, in_ch=1, out_ch=16, n_feature=16, inner_shared=False):
         super().__init__()
         self.out_ch = out_ch
         self.upscale = upscale
@@ -4312,14 +4312,14 @@ class PointConvOpt(nn.Module):
         self.msb_conv = nn.ModuleList()
         self.lsb_conv = nn.ModuleList()
         self.shard_module = nn.Sequential(
-            nn.Conv2d(n_feature, n_feature, 1),
+            nn.Conv2d(in_ch, n_feature, 1),
             nn.ReLU(inplace=True),
-            nn.Conv2d(n_feature, out_ch, 1)
+            nn.Conv2d(n_feature, out_ch, 1),
         ) if inner_shared else None
 
         for _ in range(upscale ** 2):
-            self.msb_conv.append(PointOneChannelOpt(out_ch=out_ch, n_feature=n_feature, shared_module=self.shard_module))
-            self.lsb_conv.append(PointOneChannelOpt(out_ch=out_ch, n_feature=n_feature, shared_module=self.shard_module))
+            self.msb_conv.append(PointOneChannelOpt(in_ch=in_ch, out_ch=out_ch, n_feature=n_feature, shared_module=self.shard_module))
+            self.lsb_conv.append(PointOneChannelOpt(in_ch=in_ch, out_ch=out_ch, n_feature=n_feature, shared_module=self.shard_module))
         
     def forward(self, xh, xl, h, s, l):
         if s:
@@ -4391,12 +4391,12 @@ class UpConvOpt(nn.Module):
             return self.msb_conv(xh) if h else self.lsb_conv(xl)
 
 class TinyLUTNetOpt(nn.Module):
-    def __init__(self, upscale=4, n_feature=32):
+    def __init__(self, upscale=4, n_feature=16):
         super().__init__()
         # 初始化各模块
         self.down = DepthWise()
         self.depthconv = DepthWiseOpt(is_pad=True)
-        self.pointconv = PointConvOpt(upscale=4, out_ch=16,n_feature=n_feature // 4, inner_shared=True)
+        self.pointconv = PointConvOpt(upscale=4, out_ch=16,n_feature=n_feature, inner_shared=True)
         self.depthwise = DepthWiseOpt(is_pad=True)
         self.pointwise = PointConvOpt(upscale=1, out_ch=16,n_feature=n_feature, inner_shared=True)
         self.updepth = DepthWiseOpt(is_pad=True)
