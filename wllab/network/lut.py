@@ -4267,10 +4267,10 @@ class PointOneChannelOpt(nn.Module):
             nn.Conv2d(in_ch, n_feature, 1),
             nn.ReLU(inplace=True),
             shared_module if shared_module else nn.Sequential(
-                nn.Conv2d(n_feature, n_feature, 1),
-                nn.ReLU(inplace=True)
+                # nn.Conv2d(n_feature, n_feature, 1),
+                # nn.ReLU(inplace=True),
+                nn.Conv2d(n_feature, out_ch, 1)
             ),
-            nn.Conv2d(n_feature, out_ch, 1)
         )
 
     def forward(self, x):
@@ -4315,7 +4315,8 @@ class PointConvOpt(nn.Module):
         self.lsb_conv = nn.ModuleList()
         self.shard_module = nn.Sequential(
             nn.Conv2d(n_feature, n_feature, 1),
-            nn.ReLU(inplace=True)
+            nn.ReLU(inplace=True),
+            nn.Conv2d(n_feature, out_ch, 1)
         ) if inner_shared else None
 
         for _ in range(upscale ** 2):
