@@ -4309,23 +4309,15 @@ class PointConvOpt(nn.Module):
         # 使用ModuleList存储卷积模块
         self.msb_conv = nn.ModuleList()
         self.lsb_conv = nn.ModuleList()
-        self.msb_shared = nn.ModuleList()
-        self.lsb_shared = nn.ModuleList()
-
+        self.inner_shared = inner_shared
+        self.row_shared = row_shared
         # upscale ** 2 must be divisible by inner_shared
         assert (upscale ** 2) % inner_shared == 0
 
         for _ in range((upscale ** 2) // inner_shared):
-            self.msb_shared.append(PointOneChannelOpt(in_ch=in_ch, out_ch=out_ch, n_feature=n_feature))
-            self.lsb_shared.append(PointOneChannelOpt(in_ch=in_ch, out_ch=out_ch, n_feature=n_feature))
+            self.msb_conv.append(PointOneChannelOpt(in_ch=in_ch, out_ch=out_ch, n_feature=n_feature))
+            self.lsb_conv.append(PointOneChannelOpt(in_ch=in_ch, out_ch=out_ch, n_feature=n_feature))
 
-        for i in range(upscale ** 2):
-            if row_shared:
-                self.msb_conv.append(self.msb_shared[i // inner_shared])
-                self.lsb_conv.append(self.lsb_shared[i // inner_shared])
-            else:
-                self.msb_conv.append(self.msb_shared[i % inner_shared])
-                self.lsb_conv.append(self.msb_shared[i % inner_shared])
         
     def forward(self, xh, xl, h, s, l):
         if s:
@@ -4336,8 +4328,9 @@ class PointConvOpt(nn.Module):
             output = None
             num_modules = self.upscale ** 2
             for i in range(num_modules):
+                idx = i // self.inner_shared if self.row_shared else i % self.inner_shared
                 # 逐个处理每个卷积模块并累加结果
-                out_i = self.msb_conv[i](x) if h else self.lsb_conv[i](x)
+                out_i = self.msb_conv[idx](x) if h else self.lsb_conv[idx](x)
                 out_i = out_i.view(B, C, self.out_ch, H, W).clamp(-128, 127)
                 if output is None:
                     output = out_i
@@ -4355,7 +4348,8 @@ class PointConvOpt(nn.Module):
             x = xh if h else xl
             B, C, H, W = x.shape
             x = x.view(B*C, 1, H, W)
-            out = self.msb_conv[l](x) if h else self.lsb_conv[l](x)
+            idx = l // self.inner_shared if self.row_shared else l % self.inner_shared
+            out = self.msb_conv[idx](x) if h else self.lsb_conv[idx](x)
             return out.view(B, C, self.out_ch, H, W).clamp(-128, 127)
 
 
@@ -4402,9 +4396,9 @@ class TinyLUTNetOpt(nn.Module):
         # 初始化各模块
         self.down = DepthWise()
         self.depthconv = DepthWiseOpt(is_pad=True)
-        self.pointconv = PointConvOpt(upscale=4, out_ch=16,n_feature=n_feature, inner_shared=4, row_shared=True)
+        self.pointconv = PointConvOpt(upscale=2, out_ch=16,n_feature=n_feature, inner_shared=2, row_shared=True)
         self.depthwise = DepthWiseOpt(is_pad=True)
-        self.pointwise = PointConvOpt(upscale=4, out_ch=16,n_feature=n_feature, inner_shared=4, row_shared=False)
+        self.pointwise = PointConvOpt(upscale=2, out_ch=16,n_feature=n_feature, inner_shared=2, row_shared=False)
         self.updepth = DepthWiseOpt(is_pad=True)
         self.upconv = UpConvOpt(n_feature=n_feature)
         self.upscale = upscale
