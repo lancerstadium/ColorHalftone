@@ -47,7 +47,7 @@ def EVAL_LUT_SR():
     # lut_load(model, ['s', 'd', 'y'], 2, 8, 4, 4, './lut', '', '_c1')
     # lut_load(model, ['s', 'd', 'y'], 2, 8, 4, 4, './lut', '', '_c2')
     # model = LogicLUTNet(kernel_size=3, upscale=4, n_feature=64)
-    model = TinyLUTNetOpt(upscale=4, n_feature=64)
+    model = TinyLUTNetOpt(upscale=4, n_feature=16)
 
     ints = torch.rand(1, 1, 48, 48)
     # print(model.weight_s1_s[0:4])
