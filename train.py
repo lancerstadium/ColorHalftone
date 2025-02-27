@@ -65,7 +65,7 @@ def TRAIN_SR():
         upscale_factor=4,
         is_DIV2K=True
     )
-    pdataloader = DataLoader(pdataset, batch_size=8, shuffle=False)
+    pdataloader = DataLoader(pdataset, batch_size=4, shuffle=False)
 
     # 初始化模型
     # model = SRNet(mode='SxN', nf=64, upscale=4, dense=True)
