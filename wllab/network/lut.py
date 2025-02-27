@@ -4488,22 +4488,22 @@ class TinyLUTNetOpt(nn.Module):
             xl = XQuantize.apply(xl * (1 - self.clip_params[11]) + xll * self.clip_params[11]).clamp(0, 3)
             del xhl, xll
 
-            # Layer 5: Pointwise
+            # Layer 5: UpDepth
+            xH = torch.stack(self.updepth(xh, xl, h=True), dim=1).sum(dim=1)
+            xL = torch.stack(self.updepth(xh, xl, h=False), dim=1).sum(dim=1)
+            
+            # 及时释放中间变量
+            xh = (XQuantize.apply(xH / 9) + xh).clamp(-32, 31)
+            xl = (XQuantize.apply(xL / 9) + xl).clamp(0, 3)
+            del xH, xL
+            torch.cuda.empty_cache()
+
+            # Layer 6: Pointwise
             xH = self.pointwise(xh * self.clip_params[4], xl, h=True, s=True, l=0).sum(dim=1)
             xL = self.pointwise(xh, xl * self.clip_params[5], h=False, s=True, l=0).sum(dim=1)
             
             xh = (XQuantize.apply(xH / 16) + xh).clamp(-32, 31)
             xl = (XQuantize.apply(xL / 16) + xl).clamp(0, 3)
-            del xH, xL
-            torch.cuda.empty_cache()
-
-            # Layer 6: UpPoint
-            xH = torch.stack(self.uppoint(xh, xl, h=True), dim=1).sum(dim=1)
-            xL = torch.stack(self.uppoint(xh, xl, h=False), dim=1).sum(dim=1)
-            
-            # 及时释放中间变量
-            xh = (XQuantize.apply(xH / 9) + xh).clamp(-32, 31)
-            xl = (XQuantize.apply(xL / 9) + xl).clamp(0, 3)
             del xH, xL
             torch.cuda.empty_cache()
 
