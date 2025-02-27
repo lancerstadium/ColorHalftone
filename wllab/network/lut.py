@@ -4273,11 +4273,12 @@ class PointOneChannelOpt(nn.Module):
         return XQuantize.apply(self.conv(x).clamp(-128, 127))
 
 class PointConvOpt(nn.Module):
-    def __init__(self, n_feature=32):
+    def __init__(self, out_ch=16, n_feature=32):
         super().__init__()
+        self.out_ch = out_ch
         # 优化2：共享基础卷积层减少参数
-        self.msb_conv = PointOneChannelOpt(n_feature=n_feature)
-        self.lsb_conv = PointOneChannelOpt(n_feature=n_feature)
+        self.msb_conv = PointOneChannelOpt(out_ch=out_ch, n_feature=n_feature)
+        self.lsb_conv = PointOneChannelOpt(out_ch=out_ch, n_feature=n_feature)
         
     def forward(self, xh, xl, h, s, l):
         if s:
@@ -4287,7 +4288,7 @@ class PointConvOpt(nn.Module):
             # 合并批次和通道维度进行批量处理
             x = x.view(B*C, 1, H, W)
             outputs = self.msb_conv(x) if h else self.lsb_conv(x)
-            return outputs.view(B, C, 16, H, W).clamp(-128, 127)
+            return outputs.view(B, C, self.out_ch, H, W).clamp(-128, 127)
         else:
             return self.msb_conv(xh) if h else self.lsb_conv(xl)
 
@@ -4333,12 +4334,13 @@ class TinyLUTNetOpt(nn.Module):
         super().__init__()
         # 初始化各模块
         self.depthwise = DepthWiseOpt()  # 假设已定义
-        self.pointconv = PointConvOpt(n_feature=n_feature)
+        self.pointconv = PointConvOpt(out_ch=16,n_feature=n_feature)
+        self.pointwise = PointConvOpt(out_ch=1,n_feature=n_feature)
         self.upconv = UpConvOpt(n_feature=n_feature)
         self.upscale = upscale
         
         # 量化参数（减少参数数量）
-        self.clip_params = nn.Parameter(torch.full((4, 16, 1, 1), 0.8))
+        self.clip_params = nn.Parameter(torch.full((6, 16, 1, 1), 0.8))
         
     @staticmethod
     def low_high(image):
@@ -4379,9 +4381,18 @@ class TinyLUTNetOpt(nn.Module):
             del xH, xL
             torch.cuda.empty_cache()
 
-            # Layer 3: UpConv
-            xH = self.upconv(xh * self.clip_params[2], xl, h=True, s=True, l=0).sum(dim=1)
-            xL = self.upconv(xh, xl * self.clip_params[3], h=False, s=True, l=0).sum(dim=1)
+            # Layer 3: PointConv
+            xH = self.pointwise(xh * self.clip_params[2], xl, h=True, s=True, l=0).sum(dim=1)
+            xL = self.pointwise(xh, xl * self.clip_params[3], h=False, s=True, l=0).sum(dim=1)
+            
+            xh = (XQuantize.apply(xH) + xh).clamp(-32, 31)
+            xl = (XQuantize.apply(xL) + xl).clamp(0, 3)
+            del xH, xL
+            torch.cuda.empty_cache()
+
+            # Layer 4: UpConv
+            xH = self.upconv(xh * self.clip_params[4], xl, h=True, s=True, l=0).sum(dim=1)
+            xL = self.upconv(xh, xl * self.clip_params[5], h=False, s=True, l=0).sum(dim=1)
             
             xh = (XQuantize.apply(xH / 16) + xh).clamp(-32, 31)
             xl = (XQuantize.apply(xL / 16) + xl).clamp(0, 3)
