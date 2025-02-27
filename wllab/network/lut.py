@@ -4264,9 +4264,9 @@ class PointOneChannelOpt(nn.Module):
         # 优化1：减少通道数(64->32)和层数
         self.bias = nn.Parameter(torch.zeros(out_ch))
         self.conv = nn.Sequential(
-            nn.Conv2d(in_ch, n_feature, 1),
+            nn.Conv2d(in_ch, n_feature, 1, bias=False),
             nn.ReLU(inplace=True),
-            nn.Conv2d(n_feature, out_ch, 1)
+            nn.Conv2d(n_feature, out_ch, 1, bias=False)
         )
 
     def forward(self, x):
