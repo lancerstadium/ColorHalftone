@@ -4400,7 +4400,7 @@ class TinyLUTNetOpt(nn.Module):
         self.depthwise = DepthWiseOpt(is_pad=True)
         self.pointwise = PointConvOpt(upscale=2, out_ch=16,n_feature=n_feature, inner_shared=2, row_shared=False)
         self.updepth = DepthWiseOpt(is_pad=True)
-        self.upconv = UpConvOpt(n_feature=n_feature)
+        self.uppoint = PointConvOpt(upscale=4, out_ch=16,n_feature=4, inner_shared=1, row_shared=False)
         self.upscale = upscale
         
         # 量化参数（减少参数数量）
@@ -4497,9 +4497,9 @@ class TinyLUTNetOpt(nn.Module):
             del xH, xL
             torch.cuda.empty_cache()
 
-            # Layer 6: UpConv
-            xH = self.upconv(xh * self.clip_params[8], xl, h=True, s=True, l=0).sum(dim=1)
-            xL = self.upconv(xh, xl * self.clip_params[9], h=False, s=True, l=0).sum(dim=1)
+            # Layer 6: UpPoint
+            xH = self.uppoint(xh * self.clip_params[8], xl, h=True, s=True, l=0).sum(dim=1)
+            xL = self.uppoint(xh, xl * self.clip_params[9], h=False, s=True, l=0).sum(dim=1)
             
             xh = (XQuantize.apply(xH / 16) + xh).clamp(-32, 31)
             xl = (XQuantize.apply(xL / 16) + xl).clamp(0, 3)
