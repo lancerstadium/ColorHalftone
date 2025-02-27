@@ -4339,10 +4339,11 @@ class TinyLUTNetOpt(nn.Module):
         self.pointwise = PointConvOpt(out_ch=16,n_feature=n_feature)
         self.updepth = DepthWiseOpt(is_pad=True)
         self.upconv = UpConvOpt(n_feature=n_feature)
+        self.updepth = DepthWiseOpt(is_pad=True)
         self.upscale = upscale
         
         # 量化参数（减少参数数量）
-        self.clip_params = nn.Parameter(torch.full((11, 16, 1, 1), 0.8))
+        self.clip_params = nn.Parameter(torch.full((11, upscale * upscale, 1, 1), 0.8))
         
     @staticmethod
     def low_high(image):
@@ -4446,6 +4447,20 @@ class TinyLUTNetOpt(nn.Module):
 
             # Accumulate ResBlock
             res = XQuantize.apply((xh * 4 + xl).clamp(-128, 127) * (1 - self.clip_params[10]) + x[:,:,2:,2:] * self.clip_params[10]).clamp(-128, 127)
+            xh, xl = self.low_high(res)
+
+            # Layer 8: UPDepth
+            xH = torch.stack(self.updepth(xh, xl, h=True), dim=1).sum(dim=1)
+            xL = torch.stack(self.updepth(xh, xl, h=False), dim=1).sum(dim=1)
+            
+            # 及时释放中间变量
+            xh = (XQuantize.apply(xH / 9) + xh).clamp(-32, 31)
+            xl = (XQuantize.apply(xL / 9) + xl).clamp(0, 3)
+            del xH, xL
+            torch.cuda.empty_cache()
+
+            # Res
+            res = XQuantize.apply(xh * 4 + xl).clamp(-128, 127)
 
             # 上采样与后处理
             res = nn.PixelShuffle(self.upscale)(res)
