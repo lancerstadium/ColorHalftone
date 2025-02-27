@@ -4235,6 +4235,8 @@ class DepthWiseOpt(torch.nn.Module):
         base_kernel = torch.eye(9, dtype=torch.float32).view(1, 9, 1, 3, 3)
         self.weights = nn.Parameter(base_kernel.repeat(2, channel, 1, 1, 1))  # [2,9C,1,3,3]
         self.register_buffer('mask', (self.weights != 0).float())
+        # 高低都有bias
+        self.bias = nn.Parameter(torch.zeros(2, 9, channel))
 
     def forward(self, xh, xl, h):
         B, C, H, W = xh.size() if h else xl.size()
@@ -4249,6 +4251,7 @@ class DepthWiseOpt(torch.nn.Module):
         outputs = F.conv2d(
             x.repeat_interleave(9, dim=1),  # [B, 9C, H, W]
             weights * mask,
+            bias=self.bias[idx].view(-1),
             padding=self.pad,
             groups=9*C
         ).view(B, 9, self.channel, H-(2 - self.pad * 2), W-(2 - self.pad * 2)).clamp(-128, 127)  # 保留原有 clamp
@@ -4446,7 +4449,7 @@ class TinyLUTNetOpt(nn.Module):
             torch.cuda.empty_cache()
 
             # Accumulate ResBlock
-            res = XQuantize.apply((xh * 4 + xl).clamp(-128, 127) * (1 - self.clip_params[10]) + x[:,:,2:,2:] * self.clip_params[10]).clamp(-128, 127)
+            res = XQuantize.apply(((xh * 4 + xl).clamp(-128, 127) + x[:,:,2:,2:]) * self.clip_params[10]).clamp(-128, 127)
             xh, xl = self.low_high(res)
 
             # Layer 8: UPDepth
