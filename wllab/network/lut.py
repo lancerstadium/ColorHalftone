@@ -4311,6 +4311,10 @@ class PointConvOpt(nn.Module):
         self.lsb_conv = nn.ModuleList()
         self.msb_shared = nn.ModuleList()
         self.lsb_shared = nn.ModuleList()
+
+        # upscale ** 2 must be divisible by inner_shared
+        assert (upscale ** 2) % inner_shared == 0
+
         for _ in range((upscale ** 2) // inner_shared):
             self.msb_shared.append(PointOneChannelOpt(in_ch=in_ch, out_ch=out_ch, n_feature=n_feature))
             self.lsb_shared.append(PointOneChannelOpt(in_ch=in_ch, out_ch=out_ch, n_feature=n_feature))
@@ -4396,7 +4400,7 @@ class TinyLUTNetOpt(nn.Module):
         self.depthconv = DepthWiseOpt(is_pad=True)
         self.pointconv = PointConvOpt(upscale=4, out_ch=16,n_feature=n_feature, inner_shared=4)
         self.depthwise = DepthWiseOpt(is_pad=True)
-        self.pointwise = PointConvOpt(upscale=1, out_ch=16,n_feature=n_feature, inner_shared=4)
+        self.pointwise = PointConvOpt(upscale=1, out_ch=16,n_feature=n_feature, inner_shared=1)
         self.updepth = DepthWiseOpt(is_pad=True)
         self.upconv = UpConvOpt(n_feature=n_feature)
         self.upscale = upscale
