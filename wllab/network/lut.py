@@ -4267,8 +4267,6 @@ class PointOneChannelOpt(nn.Module):
             nn.Conv2d(in_ch, n_feature, 1),
             nn.ReLU(inplace=True),
             shared_module if shared_module else nn.Sequential(
-                # nn.Conv2d(n_feature, n_feature, 1),
-                # nn.ReLU(inplace=True),
                 nn.Conv2d(n_feature, out_ch, 1)
             ),
         )
@@ -4341,6 +4339,7 @@ class PointConvOpt(nn.Module):
                     output += out_i
                 # 及时释放中间变量（可选）
                 del out_i
+                torch.cuda.empty_cache()
             
             # 计算均值并确保结果在正确设备上
             output = XQuantize.apply(output / num_modules).clamp(-128, 127)
