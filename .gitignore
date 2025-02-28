@@ -10,3 +10,6 @@ model_epoch_*
 *.out
 lut/*.npy
 *.synctex.gz
+obj_dir/
+build/
+*.vcd
