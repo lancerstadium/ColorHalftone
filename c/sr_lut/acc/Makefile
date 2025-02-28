@@ -9,9 +9,12 @@ WAVE  		:= $(OBJ_DIR)/wave.vcd
 VSRC		:= $(filter-out $(VTOP) %TB.sv, $(wildcard $(HWDIR)/*.sv))
 CSRC		:= $(wildcard $(SWDIR)/*.c $(SWDIR)/*.cc $(SWDIR)/*.cpp)
 
-.PHONY: all sim run wave clean
+.PHONY: all sim gen run wave clean
 
 all: sim
+
+gen:
+	@python gen.py
 
 sim:
 	@echo "Building simulation..."

@@ -76,9 +76,7 @@ void TinyLUT_test() {
     for (int i = 0; i < total; i++) {
         sprintf(img_path, "../../test/org/%s.png", IMG[i]);
         X = (uint8_t *)stbi_load(img_path, &W, &H, &C, 0);
-#if   defined(USE_BICUBIC)
-        Intp_bicubic_s32_hwc(Y, X, C, H, W, 4);
-#elif defined(USE_OPTIMIZED)
+#if defined(USE_OPTIMIZED)
         TinyLUT_forward_opt(&mdl, Y, X, H, W, C);
 #else
         TinyLUT_forward(&mdl, Y, X, H, W, C);
@@ -139,7 +137,7 @@ void Quant_s16_test() {         // Error
 int main() {
     // MuLUT_test();
     // Quant_s16_test();
-    // TinyLUT_test();
-    Bicubic_test();
+    TinyLUT_test();
+    // Bicubic_test();
     return 0;
 }

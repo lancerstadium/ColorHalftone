@@ -19,12 +19,13 @@ int main (int argc, char **argv) {
     int flag = 0;
 
     while (!contextp->gotFinish() && ++flag < 20) {
-        int a = rand() & 1;
-        int b = rand() & 1;
+        int a = rand() % 160 - 80;
         top->a = a;
         top->eval();
-        top->b = b;
-        printf("a = %d, b = %d\n", a, b);
+        // printf("a = %d, b = %d\n", a, top->b);
+        printf("a = %d, b = %d\n", a, ((int8_t)((u_int8_t)top->b << 2) >> 2));        // Clamp s6
+        // printf("a = %d, b = %d\n", (int8_t)(a & 0xFF), top->b - 128);    // Cast s2u
+        // printf("a = %d, b = %d\n", a, (int8_t)(top->b & 0xFF) + 128);    // Cast u2s
         // assert(top->f == (a ^ b));
 
         contextp->timeInc(1); // 时间+1，推动仿真时间

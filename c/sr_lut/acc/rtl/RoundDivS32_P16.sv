@@ -12,24 +12,20 @@
 /* verilator lint_off WIDTHEXPAND */
 /* verilator lint_off WIDTHTRUNC */
 /* verilator lint_off UNUSEDSIGNAL */
-module RoundDivS32_P9 (
+module RoundDivS32_P16 (
     input  logic signed [31:0] x,
     output logic signed [31:0] result
 );
-    // 通用倒数乘法实现
-    localparam RECIPROCAL = 1073741824;
+    // 静态2^n优化路径
+    localparam SHIFT = 4;
     always_comb begin
-        logic signed [63:0] scaled;
-        logic signed [31:0] base_adj = 9 >> 1;
-        logic signed [31:0] adj = base_adj;
-        
-        if (9 == 0) begin
+        logic signed [31:0] adj = 16 >> 1;
+        if (16 == 0) begin
             result = 0;
         end else begin
-            scaled = (x + adj) * RECIPROCAL;
-            // 符号校正与精度对齐
-            result = (x[31] ^ 0) ? 
-                    -(scaled[61:30]) : scaled[61:30];
+            // 符号统一处理
+            logic signed [32:0] adjusted = x + (adj);
+            result = adjusted >>> SHIFT;
         end
     end
 endmodule
