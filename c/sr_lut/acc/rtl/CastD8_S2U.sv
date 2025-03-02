@@ -4,7 +4,7 @@
  * Output       : y[7:0] - Unsigned/Signed 8-bit interger
  * Description  : Signed 8-bit clamp to the range of a sub-bit signed integer or reverse.
  * Author       : lancerstadium
- * Date         : Sat Mar  1 00:00:00 CST 2025
+ * Date         : Sun Mar  2 18:12:13 CST 2025
  * License      : MIT
  */
 

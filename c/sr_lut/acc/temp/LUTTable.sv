@@ -12,6 +12,7 @@
     import numpy as np
     
     # 计算总元素个数并展平
+    index_size = shape[0]
     total_size = np.prod(shape)
     flattened_shape = (total_size,)
     
@@ -41,8 +42,8 @@
             current_line.append(hex_val)
             
             # 每batch个元素
-            if len(current_line) >= BATCH_LEN:
-                lines[-1] += ("    " + ", ".join(current_line))
+            if len(current_line) >= BATCH_LEN and not idx == len(flat_data) - 1:
+                lines[-1] += ("    " + ", ".join(current_line) + ", ")
                 current_line = []
         
         # 处理最后一行
@@ -52,6 +53,8 @@
         lines.append("};")
         return '\n'.join(lines)
 %>
+/* verilator lint_off WIDTHTRUNC */
+/* verilator lint_off CASEINCOMPLETE */
 module ${module_name} (
     // 系统接口
     input  logic         clk,      // 全局时钟
@@ -59,7 +62,7 @@ module ${module_name} (
     // 批量读取控制
     input  logic         burst_start,  // 脉冲启动批量读取
     output logic         burst_done,   // 批量读取完成标志
-    input  logic [${clog2(total_size)-1}:0] base_addr,  // 展平后基地址
+    input  logic [${clog2(index_size)-1}:0]    base_addr,  // 非展平基地址
     // 数据输出
     output logic signed [7:0] data [0:${BATCH_LEN-1}]  // 并行输出
 );
@@ -67,63 +70,76 @@ module ${module_name} (
     (* rom_style = "block" *) 
     logic signed [7:0] lut_mem [0:${total_size-1}]
     % if 'table' in locals():
+    =
     ${init_content(table, shape)}
     % else:
     ;
     % endif
 
-    // 批量读取控制逻辑（优化版）
-    typedef enum logic {IDLE, ACTIVE} burst_state_t;
+    // 状态机增强版（防止锁死）
+    typedef enum logic [1:0] {
+        IDLE,
+        ACTIVE,
+        ERROR_STATE
+    } burst_state_t;
+    
     burst_state_t state;
+    logic [${clog2(BATCH_LEN)+1}:0] counter;  // 增加安全位宽
+    logic [${clog2(total_size)-1}:0] addr_reg [0:${BATCH_LEN-1}];
 
-    logic [${clog2(BATCH_LEN)}:0] counter;  // 增加1bit防止溢出
+    // 地址有效性检查
+    logic addr_valid;
+    assign addr_valid = (base_addr * ${BATCH_LEN} + ${BATCH_LEN}) <= ${total_size};
 
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             state <= IDLE;
             counter <= 0;
             burst_done <= 0;
-        end else begin
-            case (state)
-                IDLE: begin
-                    burst_done <= 0;
-                    if (burst_start) begin
-                        state <= ACTIVE;
-                        counter <= ${BATCH_LEN};  // 递减计数器
-                    end
-                end
-                
-                ACTIVE: begin
-                    counter <= counter - 1;
-                    if (counter == 1) begin
-                        state <= IDLE;
-                        burst_done <= 1;
-                    end
-                end
-            endcase
-        end
-    end
-
-    // 并行读取流水线（优化时序）
-    logic [${clog2(total_size)-1}:0] addr_reg [0:${BATCH_LEN-1}];
-
-    generate
-        for (genvar i = 0; i < ${BATCH_LEN}; i++) begin : pipeline
-            // 地址计算级
-            always_ff @(posedge clk) begin
-                if (state == IDLE && burst_start) begin
-                    addr_reg[i] <= base_addr + i;
-                end else if (state == ACTIVE) begin
-                    addr_reg[i] <= addr_reg[i] + ${BATCH_LEN};
+            foreach(addr_reg[i]) addr_reg[i] <= 0;
+        end else case (state)
+            IDLE: begin
+                burst_done <= 0;
+                if (burst_start && addr_valid) begin
+                    state <= ACTIVE;
+                    counter <= ${BATCH_LEN};
+                    foreach(addr_reg[i]) 
+                        addr_reg[i] <= base_addr * ${BATCH_LEN} + i;
+                end else if (burst_start) begin
+                    state <= ERROR_STATE;  // 处理非法地址
                 end
             end
             
-            // 数据输出级
+            ACTIVE: begin
+                counter <= counter - 1;
+                foreach(addr_reg[i])
+                    addr_reg[i] <= addr_reg[i] + ${BATCH_LEN};
+                
+                if (counter == 1) begin
+                    state <= IDLE;
+                    burst_done <= 1;
+                end
+            end
+            
+            ERROR_STATE: begin
+                // 可扩展错误恢复逻辑
+                state <= IDLE;
+            end
+        endcase
+    end
+
+    generate
+        for (genvar i = 0; i < ${BATCH_LEN}; i++) begin : pipeline
             always_ff @(posedge clk) begin
-                data[i] <= lut_mem[addr_reg[i]];
+                if (state == ACTIVE) begin
+                    data[i] <= lut_mem[addr_reg[i]];
+                end else begin
+                    data[i] <= '0;  // 非活动状态清零
+                end
             end
         end
     endgenerate
 
 endmodule
-
+/* verilator lint_on CASEINCOMPLETE */
+/* verilator lint_on WIDTHTRUNC */

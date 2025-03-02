@@ -4398,14 +4398,14 @@ class TinyLUTNetOpt(nn.Module):
         self.depthconv = DepthWiseOpt(is_pad=True)
         self.pointconv = PointConvOpt(upscale=4, out_ch=16,n_feature=n_feature, inner_shared=1, row_shared=False)
         self.depthwise = DepthWiseOpt(is_pad=True)
-        self.pointwise = PointConvOpt(upscale=1, out_ch=16,n_feature=n_feature, inner_shared=1, row_shared=False)
+        self.pointwise = self.pointconv
         self.updepth = DepthWiseOpt(is_pad=True)
         # self.uppoint = PointConvOpt(upscale=4, out_ch=16,n_feature=n_feature, inner_shared=1, row_shared=False)
-        self.uppoint = self.pointconv
+        self.uppoint = PointConvOpt(upscale=4, out_ch=16,n_feature=n_feature, inner_shared=1, row_shared=False)
         self.upscale = upscale
         
         # 量化参数（减少参数数量）
-        self.clip_params = nn.Parameter(torch.full((11, upscale * upscale, 1, 1), 0.8))
+        self.clip_params = nn.Parameter(torch.full((10, upscale * upscale, 1, 1), 0.8))
         
     @staticmethod
     def low_high(image):
@@ -4502,13 +4502,13 @@ class TinyLUTNetOpt(nn.Module):
             xH = self.uppoint(xh * self.clip_params[8], xl, h=True, s=True, l=0).sum(dim=1)
             xL = self.uppoint(xh, xl * self.clip_params[9], h=False, s=True, l=0).sum(dim=1)
             
-            xh = (XQuantize.apply(xH / 16) + xh).clamp(-32, 31)
-            xl = (XQuantize.apply(xL / 16) + xl).clamp(0, 3)
+            xh = (XQuantize.apply(xH / 16) + xh).clamp(-128, 127)
+            xl = (XQuantize.apply(xL / 16) + xl).clamp(-128, 127)
             del xH, xL
             torch.cuda.empty_cache()
 
             # Accumulate ResBlock
-            res = XQuantize.apply(((xh * 4 + xl).clamp(-128, 127) + x[:,:,2:,2:]) * self.clip_params[10]).clamp(-128, 127)
+            res = XQuantize.apply((xh + xl).clamp(-128, 127)).clamp(-128, 127)
 
             # 上采样与后处理
             res = nn.PixelShuffle(self.upscale)(res)

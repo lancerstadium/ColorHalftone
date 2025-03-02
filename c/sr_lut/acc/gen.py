@@ -68,7 +68,11 @@ class RTLGenerator:
             sign=sign
         )
 
-    def DepthLUT(self, C=3, H=50, W=50, upscale=4, ksz=3, datawidth=8):
+    def DepthLUT(self, C=3, H=50, W=50, upscale=4, ksz=3, datawidth=8, msb_path="", lsb_path=""):
+        msb_name = msb_path.split('/')[-1].split('.')[0]
+        lsb_name = lsb_path.split('/')[-1].split('.')[0]
+        self.LUTTable(npy_path=msb_path, batch_len=upscale**2, npy_name=msb_name)
+        self.LUTTable(npy_path=lsb_path, batch_len=upscale**2, npy_name=lsb_name)
         self.gen(
             out_name=f"DepthLUT_{C}x{H}x{W}_K{ksz}_U{upscale}_D{datawidth}",
             temp_path=os.path.join(self.temp_dir, 'DepthLUT.sv'),
@@ -78,16 +82,17 @@ class RTLGenerator:
             W=W,
             UPSCALE=upscale,
             KSZ=ksz,
-            DW=datawidth
+            DW=datawidth,
+            msb_name=msb_name,
+            lsb_name=lsb_name
         )
 
-    def LUTTable(self, npy_path='lut.npy', batch_len=16):
+    def LUTTable(self, npy_path='lut.npy', batch_len=16, npy_name='lut'):
         '''Generate LUTTable'''
         table = np.load(npy_path).astype(np.int8)
         # squeeze table (delete 1-dim)
         table = np.squeeze(table)
         shape = table.shape
-        npy_name = npy_path.split('/')[-1].split('.')[0]
         self.gen(
             out_name=f'LUTTable_{npy_name}',
             temp_path=os.path.join(self.temp_dir, 'LUTTable.sv'),
@@ -97,6 +102,7 @@ class RTLGenerator:
             shape=shape,
             BATCH_LEN=batch_len
         )
+        
 
 
         
@@ -109,5 +115,4 @@ if __name__ == "__main__":
     gen.RoundDivS32(16)
     gen.ClampS32(6, True)
     gen.ClampS32(2, False)
-    gen.DepthLUT()
-    gen.LUTTable('../../../lut/TinyLUT/x4_4b_i8_s1_D_H6.npy')
+    gen.DepthLUT(msb_path='../../../lut/TinyLUT/x4_4b_i8_s1_D_H6.npy', lsb_path='../../../lut/TinyLUT/x4_4b_i8_s1_D_L2.npy')
