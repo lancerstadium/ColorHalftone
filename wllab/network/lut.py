@@ -4473,8 +4473,8 @@ class TinyLUTNetOpt(nn.Module):
             torch.cuda.empty_cache()
 
             # Layer 2: PointConv
-            xH = self.pointconv(xh * self.clip_params[0], xl, h=True, s=True, l=0).sum(dim=1)
-            xL = self.pointconv(xh, xl * self.clip_params[1], h=False, s=True, l=0).sum(dim=1)
+            xH = self.pointconv(xh * self.clip_params[4], xl, h=True, s=True, l=0).sum(dim=1)
+            xL = self.pointconv(xh, xl * self.clip_params[5], h=False, s=True, l=0).sum(dim=1)
             
             xh = (XQuantize.apply(xH / 16) + xh).clamp(-32, 31)
             xl = (XQuantize.apply(xL / 16) + xl).clamp(0, 3)
@@ -4482,8 +4482,8 @@ class TinyLUTNetOpt(nn.Module):
             torch.cuda.empty_cache()
 
             # Concat ResBlock
-            xh = XQuantize.apply(xh * (1 - self.clip_params[2]) + xhl * self.clip_params[2]).clamp(-32, 31)
-            xl = XQuantize.apply(xl * (1 - self.clip_params[3]) + xll * self.clip_params[3]).clamp(0, 3)
+            xh = XQuantize.apply(xh * (1 - self.clip_params[6]) + xhl * self.clip_params[6]).clamp(-32, 31)
+            xl = XQuantize.apply(xl * (1 - self.clip_params[7]) + xll * self.clip_params[7]).clamp(0, 3)
             xll = xl
             xhl = xh
 
@@ -4502,8 +4502,8 @@ class TinyLUTNetOpt(nn.Module):
             torch.cuda.empty_cache()
 
             # Layer 4: Pointwise
-            xH = self.pointwise(xh * self.clip_params[4], xl, h=True, s=True, l=0).sum(dim=1)
-            xL = self.pointwise(xh, xl * self.clip_params[5], h=False, s=True, l=0).sum(dim=1)
+            xH = self.pointwise(xh * self.clip_params[8], xl, h=True, s=True, l=0).sum(dim=1)
+            xL = self.pointwise(xh, xl * self.clip_params[9], h=False, s=True, l=0).sum(dim=1)
             
             xh = (XQuantize.apply(xH / 16) + xh).clamp(-32, 31)
             xl = (XQuantize.apply(xL / 16) + xl).clamp(0, 3)
@@ -4511,9 +4511,10 @@ class TinyLUTNetOpt(nn.Module):
             torch.cuda.empty_cache()
 
             # Concat ResBlock
-            xh = XQuantize.apply(xh * (1 - self.clip_params[6]) + xhl * self.clip_params[6]).clamp(-32, 31)
-            xl = XQuantize.apply(xl * (1 - self.clip_params[7]) + xll * self.clip_params[7]).clamp(0, 3)
-            del xhl, xll
+            xh = XQuantize.apply(xh * (1 - self.clip_params[10]) + xhl * self.clip_params[10]).clamp(-32, 31)
+            xl = XQuantize.apply(xl * (1 - self.clip_params[11]) + xll * self.clip_params[11]).clamp(0, 3)
+            xll = xl
+            xhl = xh
 
             # Pad 4
             xl = F.pad(xl, (0, 2, 0, 2), mode='replicate')
@@ -4539,6 +4540,10 @@ class TinyLUTNetOpt(nn.Module):
             torch.cuda.empty_cache()
 
             # Accumulate ResBlock
+            # Concat ResBlock
+            xh = XQuantize.apply(xh * (1 - self.clip_params[10]) + xhl * self.clip_params[10]).clamp(-32, 31)
+            xl = XQuantize.apply(xl * (1 - self.clip_params[11]) + xll * self.clip_params[11]).clamp(0, 3)
+            del xll, xhl
             res = XQuantize.apply(xh * 4 + xl).clamp(-128, 127)
 
             # 上采样与后处理
