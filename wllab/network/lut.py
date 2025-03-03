@@ -4406,7 +4406,7 @@ class TinyLUTNetOpt(nn.Module):
         self.upscale = upscale
         
         # 量化参数（减少参数数量）
-        self.clip_params = nn.Parameter(torch.full((10, upscale * upscale, 1, 1), 0.8))
+        self.clip_params = nn.Parameter(torch.full((12, upscale * upscale, 1, 1), 0.8))
         
     @staticmethod
     def low_high(image):
