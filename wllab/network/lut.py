@@ -4342,7 +4342,7 @@ class PointConvOpt(nn.Module):
                     output += out_i
                 # 及时释放中间变量（可选）
                 del out_i
-                # torch.cuda.empty_cache()
+                torch.cuda.empty_cache()
             
             # 计算均值并确保结果在正确设备上
             output = XQuantize.apply(output / num_modules).clamp(-128, 127)
