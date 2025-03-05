@@ -4240,19 +4240,21 @@ class DepthWiseOpt(torch.nn.Module):
         self.bias = nn.Parameter(torch.zeros(2, 9, channel).half())
 
     def forward(self, xh, xl, h):
+        device = xh.device
         B, C, H, W = xh.size() if h else xl.size()
         idx = 0 if h else 1
         
         # 合并卷积计算: 
         x = xh if h else xl
-        weights = self.weights[idx].view(-1, 1, 3, 3)
-        mask = self.mask[idx].view(-1, 1, 3, 3)
+        weights = self.weights[idx].view(-1, 1, 3, 3).to(device)
+        mask = self.mask[idx].view(-1, 1, 3, 3).to(device)
+        bias = self.bias[idx].view(-1).to(device)
         
         # 高效卷积实现（保持 clamp 顺序）
         outputs = F.conv2d(
             x.repeat_interleave(9, dim=1),  # [B, 9C, H, W]
             weights * mask,
-            bias=self.bias[idx].view(-1),
+            bias=bias,
             padding=self.pad,
             groups=9*C
         ).view(B, 9, self.channel, H-(2 - self.pad * 2), W-(2 - self.pad * 2)).clamp(-128, 127)  # 保留原有 clamp
