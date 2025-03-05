@@ -4234,20 +4234,19 @@ class DepthWiseOpt(torch.nn.Module):
         # 合并高低分支权重 [2, 9*C, 1, 3, 3]
         base_kernel = torch.eye(9, dtype=torch.float32).view(1, 9, 1, 3, 3)
         # float16
-        self.weights = nn.Parameter(base_kernel.repeat(2, channel, 1, 1, 1).half())
-        self.register_buffer('mask', (self.weights != 0).half())
+        self.weights = nn.Parameter(base_kernel.repeat(2, channel, 1, 1, 1))
+        self.register_buffer('mask', (self.weights != 0))
         # 高低都有bias
-        self.bias = nn.Parameter(torch.zeros(2, 9, channel).half())
+        self.bias = nn.Parameter(torch.zeros(2, 9, channel))
 
     def forward(self, x, h):
-        device = x.device
         B, C, H, W = x.size()
         idx = 0 if h else 1
         
         # 合并卷积计算: 
-        weights = self.weights[idx].view(-1, 1, 3, 3).to(device)
-        mask = self.mask[idx].view(-1, 1, 3, 3).to(device)
-        bias = self.bias[idx].view(-1).to(device)
+        weights = self.weights[idx].view(-1, 1, 3, 3)
+        mask = self.mask[idx].view(-1, 1, 3, 3)
+        bias = self.bias[idx].view(-1)
         
         # 高效卷积实现（保持 clamp 顺序）
         outputs = F.conv2d(
@@ -4264,17 +4263,15 @@ class PointOneChannelOpt(nn.Module):
     def __init__(self, in_ch=1, out_ch=16, n_feature=16):
         super().__init__()
         # 优化1：减少通道数(64->32)和层数
-        # set type to half
         self.conv = nn.Sequential(
             nn.Conv2d(in_ch, n_feature, 1),
             nn.ReLU(inplace=True),
             nn.Conv2d(n_feature, out_ch, 1)
-        ).half()
+        )
 
     def forward(self, x):
-        device = x.device
         # 保留量化逻辑但优化执行顺序
-        return XQuantize.apply(self.conv(x).to(device)).clamp(-128, 127)
+        return XQuantize.apply(self.conv(x)).clamp(-128, 127)
 
 # class PointConvOpt(nn.Module):
 #     def __init__(self, upscale=4, out_ch=16, n_feature=32):
@@ -4323,7 +4320,6 @@ class PointConvOpt(nn.Module):
 
         
     def forward(self, x, h, s, l):
-        device = x.device
         if s:
             B, C, H, W = x.shape
             x = x.view(B*C, 1, H, W)
@@ -4333,7 +4329,7 @@ class PointConvOpt(nn.Module):
             for i in range(num_modules):
                 idx = i // self.inner_shared if self.row_shared else i % self.inner_shared
                 # 逐个处理每个卷积模块并累加结果
-                conv = self.msb_conv[idx].to(device) if h else self.lsb_conv[idx].to(device)
+                conv = self.msb_conv[idx] if h else self.lsb_conv[idx]
                 out_i = conv(x)
                 out_i = out_i.view(B, C, self.out_ch, H, W).clamp(-128, 127)
                 if output is None:
@@ -4352,7 +4348,7 @@ class PointConvOpt(nn.Module):
             B, C, H, W = x.shape
             x = x.view(B*C, 1, H, W)
             idx = l // self.inner_shared if self.row_shared else l % self.inner_shared
-            conv = self.msb_conv[idx].to(device) if h else self.lsb_conv[idx].to(device)
+            conv = self.msb_conv[idx] if h else self.lsb_conv[idx]
             out = conv(x)
             return out.view(B, C, self.out_ch, H, W).clamp(-128, 127)
 
