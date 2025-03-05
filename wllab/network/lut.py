@@ -4233,8 +4233,9 @@ class DepthWiseOpt(torch.nn.Module):
         self.pad = 1 if is_pad else 0
         # 合并高低分支权重 [2, 9*C, 1, 3, 3]
         base_kernel = torch.eye(9, dtype=torch.float32).view(1, 9, 1, 3, 3)
-        self.weights = nn.Parameter(base_kernel.repeat(2, channel, 1, 1, 1))  # [2,9C,1,3,3]
-        self.register_buffer('mask', (self.weights != 0).float())
+        # float16
+        self.weights = nn.Parameter(base_kernel.repeat(2, channel, 1, 1, 1).half())
+        self.register_buffer('mask', (self.weights != 0).half())
         # 高低都有bias
         self.bias = nn.Parameter(torch.zeros(2, 9, channel))
 
@@ -4242,9 +4243,9 @@ class DepthWiseOpt(torch.nn.Module):
         B, C, H, W = xh.size() if h else xl.size()
         idx = 0 if h else 1
         
-        # 合并卷积计算
+        # 合并卷积计算: 
         x = xh if h else xl
-        weights = self.weights[idx].view(-1, 1, 3, 3)  # [9C,1,3,3]
+        weights = self.weights[idx].view(-1, 1, 3, 3)
         mask = self.mask[idx].view(-1, 1, 3, 3)
         
         # 高效卷积实现（保持 clamp 顺序）
@@ -4262,12 +4263,13 @@ class PointOneChannelOpt(nn.Module):
     def __init__(self, in_ch=1, out_ch=16, n_feature=16):
         super().__init__()
         # 优化1：减少通道数(64->32)和层数
-        self.bias = nn.Parameter(torch.zeros(out_ch))
+        # set type to half
+        self.bias = nn.Parameter(torch.zeros(out_ch).half())
         self.conv = nn.Sequential(
             nn.Conv2d(in_ch, n_feature, 1),
             nn.ReLU(inplace=True),
             nn.Conv2d(n_feature, out_ch, 1)
-        )
+        ).half()
 
     def forward(self, x):
         # 保留量化逻辑但优化执行顺序
