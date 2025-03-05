@@ -4609,8 +4609,8 @@ class VarLUTNet(nn.Module):
                 xh = F.pad(xh, pads, mode='replicate')
 
                 # Layer 0: Down & Dowp
-                xH = torch.stack(self.down(xh, xl, h=True), dim=1).sum(dim=1)
-                xL = torch.stack(self.down(xh, xl, h=False), dim=1).sum(dim=1)
+                xH = torch.stack(self.dw[stage](xh, xl, h=True), dim=1).sum(dim=1)
+                xL = torch.stack(self.dw[stage](xh, xl, h=False), dim=1).sum(dim=1)
                 
                 # 及时释放中间变量
                 if stage == 0:
@@ -4629,8 +4629,8 @@ class VarLUTNet(nn.Module):
                 del xH, xL
                 torch.cuda.empty_cache()
 
-                xH = self.dw[stage](xh * self.clip_params[stage * 4 + 0], xl, h=True, s=True, l=0).sum(dim=1)
-                xL = self.dw[stage](xh, xl * self.clip_params[stage * 4 + 1], h=False, s=True, l=0).sum(dim=1)
+                xH = self.pw[stage](xh * self.clip_params[stage * 4 + 0], xl, h=True, s=True, l=0).sum(dim=1)
+                xL = self.pw[stage](xh, xl * self.clip_params[stage * 4 + 1], h=False, s=True, l=0).sum(dim=1)
 
                 xh = (XQuantize.apply(xH / 16) + xh).clamp(-32, 31)
                 xl = (XQuantize.apply(xL / 16) + xl).clamp(0, 3)
