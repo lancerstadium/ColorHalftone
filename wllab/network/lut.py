@@ -4583,7 +4583,7 @@ class VarLUTNet(nn.Module):
         xh = torch.div(image, 4)
         return xl, xh
 
-    def forward(self, x, stage=0, is_train=True):
+    def forward(self, x, stage=0, is_seg=False):
         # 启用混合精度训练
         # with torch.cuda.amp.autocast():
         with torch.amp.autocast('cuda'):
@@ -4601,7 +4601,7 @@ class VarLUTNet(nn.Module):
             xll = xl
             xhl = xh
 
-            if is_train:
+            if is_seg:
                 pads = ()
                 if stage == 0:
                     pads = (2, 0, 2, 0)
