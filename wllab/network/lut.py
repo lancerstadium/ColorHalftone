@@ -4585,14 +4585,17 @@ class VarLUTNet(nn.Module):
         # 启用混合精度训练
         # with torch.cuda.amp.autocast():
         with torch.amp.autocast('cuda'):
+            device = x.device
             # 输入预处理
             x = x * 255 if stage == 0 else x
             x = (x - 128).clamp(-128, 127) if stage == 0 else x
             
             # 通道维度处理
             B, C, H, W = x.size()
-            x = x.view(B*C, 1, H, W)
+            x = x.view(B*C, 1, H, W).to(device)
             xl, xh = self.low_high(x)
+            xl = xl.to(device)
+            xh = xh.to(device)
             xll = xl
             xhl = xh
 
