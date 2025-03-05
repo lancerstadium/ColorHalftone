@@ -4239,13 +4239,12 @@ class DepthWiseOpt(torch.nn.Module):
         # 高低都有bias
         self.bias = nn.Parameter(torch.zeros(2, 9, channel).half())
 
-    def forward(self, xh, xl, h):
-        device = xh.device
-        B, C, H, W = xh.size() if h else xl.size()
+    def forward(self, x, h):
+        device = x.device
+        B, C, H, W = x.size()
         idx = 0 if h else 1
         
         # 合并卷积计算: 
-        x = xh if h else xl
         weights = self.weights[idx].view(-1, 1, 3, 3).to(device)
         mask = self.mask[idx].view(-1, 1, 3, 3).to(device)
         bias = self.bias[idx].view(-1).to(device)
@@ -4323,10 +4322,9 @@ class PointConvOpt(nn.Module):
             self.lsb_conv.append(PointOneChannelOpt(in_ch=in_ch, out_ch=out_ch, n_feature=n_feature))
 
         
-    def forward(self, xh, xl, h, s, l):
-        device = xh.device
+    def forward(self, x, h, s, l):
+        device = x.device
         if s:
-            x = xh if h else xl
             B, C, H, W = x.shape
             x = x.view(B*C, 1, H, W)
             
@@ -4351,7 +4349,6 @@ class PointConvOpt(nn.Module):
             return output
         else:
             # 处理单一路径
-            x = xh if h else xl
             B, C, H, W = x.shape
             x = x.view(B*C, 1, H, W)
             idx = l // self.inner_shared if self.row_shared else l % self.inner_shared
@@ -4619,8 +4616,8 @@ class VarLUTNet(nn.Module):
                 xh = F.pad(xh, pads, mode='replicate')
 
                 # Layer 0: Down & Dowp
-                xH = torch.stack(self.dw[stage](xh, xl, h=True), dim=1).sum(dim=1)
-                xL = torch.stack(self.dw[stage](xh, xl, h=False), dim=1).sum(dim=1)
+                xH = torch.stack(self.dw[stage](xh, h=True), dim=1).sum(dim=1)
+                xL = torch.stack(self.dw[stage](xl, h=False), dim=1).sum(dim=1)
                 
                 # 及时释放中间变量
                 if stage == 0:
@@ -4639,8 +4636,8 @@ class VarLUTNet(nn.Module):
                 del xH, xL
                 torch.cuda.empty_cache()
 
-                xH = self.pw[stage](xh * self.clip_params[stage * 4 + 0], xl, h=True, s=True, l=0).sum(dim=1)
-                xL = self.pw[stage](xh, xl * self.clip_params[stage * 4 + 1], h=False, s=True, l=0).sum(dim=1)
+                xH = self.pw[stage](xh * self.clip_params[stage * 4 + 0], h=True, s=True, l=0).sum(dim=1)
+                xL = self.pw[stage](xl * self.clip_params[stage * 4 + 1], h=False, s=True, l=0).sum(dim=1)
 
                 xh = (XQuantize.apply(xH / 16) + xh).clamp(-32, 31)
                 xl = (XQuantize.apply(xL / 16) + xl).clamp(0, 3)
@@ -4668,8 +4665,8 @@ class VarLUTNet(nn.Module):
                 xh = F.pad(xh, (2, 0, 2, 0), mode='replicate')
 
                 # Layer 0: Down & Dowp
-                xH = torch.stack(self.dw[0](xh, xl, h=True), dim=1).sum(dim=1)
-                xL = torch.stack(self.dw[0](xh, xl, h=False), dim=1).sum(dim=1)
+                xH = torch.stack(self.dw[0](xh, h=True), dim=1).sum(dim=1)
+                xL = torch.stack(self.dw[0](xl, h=False), dim=1).sum(dim=1)
                 
                 # 及时释放中间变量
                 xh = (XQuantize.apply(xH / 9) + xh[:,:,2:,2:]).clamp(-32, 31)
@@ -4677,8 +4674,8 @@ class VarLUTNet(nn.Module):
                 del xH, xL
                 torch.cuda.empty_cache()
 
-                xH = self.pw[0](xh * self.clip_params[0], xl, h=True, s=True, l=0).sum(dim=1)
-                xL = self.pw[0](xh, xl * self.clip_params[1], h=False, s=True, l=0).sum(dim=1)
+                xH = self.pw[0](xh * self.clip_params[0], h=True, s=True, l=0).sum(dim=1)
+                xL = self.pw[0](xl * self.clip_params[1], h=False, s=True, l=0).sum(dim=1)
                 
                 xh = (XQuantize.apply(xH / 16) + xh).clamp(-32, 31)
                 xl = (XQuantize.apply(xL / 16) + xl).clamp(0, 3)
@@ -4696,8 +4693,8 @@ class VarLUTNet(nn.Module):
                 xh = F.pad(xh, (2, 0, 0, 2), mode='replicate')
 
                 # Layer 1: DepthConv
-                xH = torch.stack(self.dw[1](xh, xl, h=True), dim=1).sum(dim=1)
-                xL = torch.stack(self.dw[1](xh, xl, h=False), dim=1).sum(dim=1)
+                xH = torch.stack(self.dw[1](xh, h=True), dim=1).sum(dim=1)
+                xL = torch.stack(self.dw[1](xl, h=False), dim=1).sum(dim=1)
                 
                 # 及时释放中间变量
                 xh = (XQuantize.apply(xH / 9) + xh[:,:,0:H,2:]).clamp(-32, 31)
@@ -4706,8 +4703,8 @@ class VarLUTNet(nn.Module):
                 torch.cuda.empty_cache()
 
                 # Layer 2: PointConv
-                xH = self.pw[1](xh * self.clip_params[4], xl, h=True, s=True, l=0).sum(dim=1)
-                xL = self.pw[1](xh, xl * self.clip_params[5], h=False, s=True, l=0).sum(dim=1)
+                xH = self.pw[1](xh * self.clip_params[4], h=True, s=True, l=0).sum(dim=1)
+                xL = self.pw[1](xl * self.clip_params[5], h=False, s=True, l=0).sum(dim=1)
                 
                 xh = (XQuantize.apply(xH / 16) + xh).clamp(-32, 31)
                 xl = (XQuantize.apply(xL / 16) + xl).clamp(0, 3)
@@ -4725,8 +4722,8 @@ class VarLUTNet(nn.Module):
                 xh = F.pad(xh, (0, 2, 0, 2), mode='replicate')
 
                 # Layer 3: Depthwise
-                xH = torch.stack(self.dw[2](xh, xl, h=True), dim=1).sum(dim=1)
-                xL = torch.stack(self.dw[2](xh, xl, h=False), dim=1).sum(dim=1)
+                xH = torch.stack(self.dw[2](xh, h=True), dim=1).sum(dim=1)
+                xL = torch.stack(self.dw[2](xl, h=False), dim=1).sum(dim=1)
                 
                 # 及时释放中间变量
                 xh = (XQuantize.apply(xH / 9) + xh[:,:,0:W,0:H]).clamp(-32, 31)
@@ -4735,8 +4732,8 @@ class VarLUTNet(nn.Module):
                 torch.cuda.empty_cache()
 
                 # Layer 4: Pointwise
-                xH = self.pw[2](xh * self.clip_params[8], xl, h=True, s=True, l=0).sum(dim=1)
-                xL = self.pw[2](xh, xl * self.clip_params[9], h=False, s=True, l=0).sum(dim=1)
+                xH = self.pw[2](xh * self.clip_params[8], h=True, s=True, l=0).sum(dim=1)
+                xL = self.pw[2](xl * self.clip_params[9], h=False, s=True, l=0).sum(dim=1)
                 
                 xh = (XQuantize.apply(xH / 16) + xh).clamp(-32, 31)
                 xl = (XQuantize.apply(xL / 16) + xl).clamp(0, 3)
@@ -4754,8 +4751,8 @@ class VarLUTNet(nn.Module):
                 xh = F.pad(xh, (0, 2, 2, 0), mode='replicate')
 
                 # Layer 5: UpDepth
-                xH = torch.stack(self.dw[3](xh, xl, h=True), dim=1).sum(dim=1)
-                xL = torch.stack(self.dw[3](xh, xl, h=False), dim=1).sum(dim=1)
+                xH = torch.stack(self.dw[3](xh, h=True), dim=1).sum(dim=1)
+                xL = torch.stack(self.dw[3](xl, h=False), dim=1).sum(dim=1)
                 
                 # 及时释放中间变量
                 xh = (XQuantize.apply(xH / 9) + xh[:,:,2:,0:W]).clamp(-32, 31)
@@ -4764,8 +4761,8 @@ class VarLUTNet(nn.Module):
                 torch.cuda.empty_cache()
 
                 # Layer 6: UpPoint
-                xH = self.pw[3](xh * self.clip_params[12], xl, h=True, s=True, l=0).sum(dim=1)
-                xL = self.pw[3](xh, xl * self.clip_params[13], h=False, s=True, l=0).sum(dim=1)
+                xH = self.pw[3](xh * self.clip_params[12], h=True, s=True, l=0).sum(dim=1)
+                xL = self.pw[3](xl * self.clip_params[13], h=False, s=True, l=0).sum(dim=1)
                 
                 xh = (XQuantize.apply(xH / 16) + xh).clamp(-32, 31)
                 xl = (XQuantize.apply(xL / 16) + xl).clamp(0, 3)
