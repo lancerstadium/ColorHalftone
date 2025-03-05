@@ -4237,7 +4237,7 @@ class DepthWiseOpt(torch.nn.Module):
         self.weights = nn.Parameter(base_kernel.repeat(2, channel, 1, 1, 1).half())
         self.register_buffer('mask', (self.weights != 0).half())
         # 高低都有bias
-        self.bias = nn.Parameter(torch.zeros(2, 9, channel))
+        self.bias = nn.Parameter(torch.zeros(2, 9, channel).half())
 
     def forward(self, xh, xl, h):
         B, C, H, W = xh.size() if h else xl.size()
@@ -4252,7 +4252,7 @@ class DepthWiseOpt(torch.nn.Module):
         outputs = F.conv2d(
             x.repeat_interleave(9, dim=1),  # [B, 9C, H, W]
             weights * mask,
-            bias=self.bias[idx].view(-1).half(),
+            bias=self.bias[idx].view(-1),
             padding=self.pad,
             groups=9*C
         ).view(B, 9, self.channel, H-(2 - self.pad * 2), W-(2 - self.pad * 2)).clamp(-128, 127)  # 保留原有 clamp
