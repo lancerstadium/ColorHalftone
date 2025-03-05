@@ -213,6 +213,28 @@ void Intp_fuse_s8_hwc(
     int dp
 );
 
+
+void Intp_fuse_var_s8_hwc(
+    int8_t* O,      // 输出 [H2, W2, C]
+    int8_t* I,      // 输入 [H, W, C] (MSB高6位 | LSB低2位)
+    int8_t* LUT_LSB, 
+    int8_t* LUT_MSB, // 双LUT
+    int16_t* RAT_LSB,   // 量化参数
+    int16_t* RAT_MSB,   // 量化参数
+    int C,
+    int H,
+    int W,
+    int scale_LSB,
+    int offset_LSB,
+    int scale_MSB,
+    int offset_MSB,
+    float upscale,
+    int ksz,
+    int dense,
+    int clamp8,
+    int dp
+);
+
 // ======================================================================== //
 //                               Allocators
 // ======================================================================== //

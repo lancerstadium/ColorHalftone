@@ -89,6 +89,69 @@ void TinyLUT_test() {
     TinyLUT_free(&mdl);
 }
 
+
+void VarLUT_test() {
+    int total = 10;
+    char* IMG[] = {
+        "0149x4",
+        "0152x4",
+        "0261x4",
+        "0399x4",
+        "0406x4",
+        "0509x4",
+        "0582x4",
+        "0693x4",
+        "0723x4",
+        "0740x4"
+    };
+
+    char img_path[64];
+    float scale = 4.60f;
+    int W, H, C;
+    uint8_t *X = (uint8_t *)stbi_load("../../test/org/0149x4.png", &W, &H, &C, 0);
+    int H2 = (int)(H * scale + 0.5f);
+    int W2 = (int)(W * scale + 0.5f);
+    uint8_t *Y = (uint8_t *)calloc(H2 * W2 * C, sizeof(uint8_t));
+
+    TinyLUT mdl;
+    TinyLUT_var_init(&mdl, "../../lut/VarLUT", "DPU", 3, 3, 8, 4, scale);
+
+    for (int i = 0; i < total; i++) {
+        sprintf(img_path, "../../test/org/%s.png", IMG[i]);
+        X = (uint8_t *)stbi_load(img_path, &W, &H, &C, 0);
+#if defined(USE_OPTIMIZED)
+        TinyLUT_forward_var_opt(&mdl, Y, X, H, W, C);
+#else
+        TinyLUT_forward(&mdl, Y, X, H, W, C);
+#endif
+        sprintf(img_path, "../../test/c1/%s.bmp", IMG[i]);
+        stbi_write_bmp(img_path, W2, H2, C, Y);
+        printf("img %s done\n", IMG[i]);
+    }
+
+    TinyLUT_free(&mdl);
+}
+
+
+// #define USE_SEG_MSB
+
+void Segment_test() {
+    int W, H, C;
+    uint8_t *X = (uint8_t *)stbi_load("../../test/org/Set5_01.png", &W, &H, &C, 0);
+    for(int h = 0; h < H; h++) {
+        for(int w = 0; w < W; w++) {
+            for(int c = 0; c < C; c++) {
+#if defined(USE_SEG_MSB)
+                X[h * W * C + w * C + c] = (X[h * W * C + w * C + c] >> 2) << 2;
+#else
+                X[h * W * C + w * C + c] = (X[h * W * C + w * C + c] & 0x03) << 6;
+#endif
+            }
+        }
+    }
+    stbi_write_bmp("../../test/Set5_01_LSB.bmp", W, H, C, X);
+}
+
 void Bicubic_test() {
     char img_path[64];
     int W, H, C, scale = 4;
@@ -137,7 +200,9 @@ void Quant_s16_test() {         // Error
 int main() {
     // MuLUT_test();
     // Quant_s16_test();
-    TinyLUT_test();
+    // Segment_test();
+    // TinyLUT_test();
+    VarLUT_test();
     // Bicubic_test();
     return 0;
 }

@@ -96,7 +96,7 @@ typedef struct {
     int nstage;
     int bitwidth;
     int interval;
-    int scale;
+    float scale;
     int free_mid;
     TensorData *lut[LUT_PTR_MAX];
     void *mid[10];
@@ -111,9 +111,11 @@ typedef struct {
 #endif // LUT_PERF
 } TinyLUT;
 
-void TinyLUT_init(TinyLUT *mdl, char* dir, char* modes, int nmode, int nstage, int bitwidth, int interval, int scale);
+void TinyLUT_init(TinyLUT *mdl, char* dir, char* modes, int nmode, int nstage, int bitwidth, int interval, float scale);
+void TinyLUT_var_init(TinyLUT *mdl, char* dir, char* modes, int nmode, int nstage, int bitwidth, int interval, float scale);
 void TinyLUT_free(TinyLUT *mdl);
 void TinyLUT_forward(TinyLUT *mdl, uint8_t* O, uint8_t* I, int H, int W, int C);
 void TinyLUT_forward_opt(TinyLUT *mdl, uint8_t* O, uint8_t* I, int H, int W, int C);
+void TinyLUT_forward_var_opt(TinyLUT *mdl, uint8_t* O, uint8_t* I, int H, int W, int C);
 
 #endif // SR_LUT_LUT_H

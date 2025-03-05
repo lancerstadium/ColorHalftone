@@ -166,12 +166,12 @@ def train_sr(
                 recon_loss = 0.0
                 if is_self_ensemble:
                     # 自集成训练
-                    if is_acc:
-                        out = torch.zeros_like(ref).to(device)
                     for i in range(4):
                         # 前向传播
                         orx = F.pad(torch.rot90(org, i, [2, 3]), pad_tuple, mode='replicate').to(device)
-                        out = model(orx).to(device)
+                        out = torch.zeros_like(ref).to(device)
+                        for stage in range(4):
+                            out += model(orx,stage=stage,is_train=True).to(device)
                         if is_acc:
                             out += torch.rot90(out, -i, [2, 3]).to(device)
                         else:

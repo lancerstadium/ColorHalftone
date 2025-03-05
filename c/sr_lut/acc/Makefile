@@ -8,6 +8,7 @@ CSIM		:= V$(CORE)Top
 WAVE  		:= $(OBJ_DIR)/wave.vcd
 VSRC		:= $(filter-out $(VTOP) %TB.sv, $(wildcard $(HWDIR)/*.sv))
 CSRC		:= $(wildcard $(SWDIR)/*.c $(SWDIR)/*.cc $(SWDIR)/*.cpp)
+FLAG		:= 
 
 .PHONY: all sim gen run wave clean
 
@@ -18,7 +19,7 @@ gen:
 
 sim:
 	@echo "Building simulation..."
-	@verilator --cc --exe --build -Wall --trace --top-module $(CORE)Top $(VTOP) $(VSRC) $(CTOP)
+	@verilator --cc --exe --build -Wall $(FLAG) --trace --top-module $(CORE)Top $(VTOP) $(VSRC) $(CTOP)
 
 run: $(OBJ_DIR)/$(CSIM)
 	@cd $(OBJ_DIR) && ./$(CSIM)

@@ -1784,7 +1784,7 @@ void Intp_fuse_s8_hwc(
             max_MSB[l] = Round_Div_s32( 31 * (RAT_MSB[l] - offset_MSB), scale_MSB);
             sft_LSB += max_LSB[l] - min_LSB[l] + 1;
             sft_MSB += max_MSB[l] - min_MSB[l] + 1;
-            printf("S: %d, min: %d, max: %d\n", sft_MSB, min_MSB[l], max_MSB[l]);
+            // printf("S: %d, min: %d, max: %d\n", sft_MSB, min_MSB[l], max_MSB[l]);
         }
         for (int i = 0; i < h; i++) {
             for (int j = 0; j < w; j++) {
@@ -1843,6 +1843,165 @@ void Intp_fuse_s8_hwc(
         }
     }
 }
+
+
+void Intp_map_x4(int32_t* O, const int32_t I[16], float upscale) {
+    // Map 4x4 Pixel into (1xupscale, 1xupscale) Pixel
+
+}
+
+
+void Intp_fuse_var_s8_hwc(
+    int8_t* O,      // 输出 [H2, W2, C]
+    int8_t* I,      // 输入 [H, W, C]
+    int8_t* LUT_LSB, 
+    int8_t* LUT_MSB,
+    int16_t* RAT_LSB,
+    int16_t* RAT_MSB,
+    int C,
+    int H,
+    int W,
+    int scale_LSB,
+    int offset_LSB,
+    int scale_MSB,
+    int offset_MSB,
+    float upscale,
+    int ksz,
+    int dense,
+    int clamp8,
+    int dp
+) {
+    const int pad = 2;
+    const int H2 = dp ? (H - pad) : H;
+    const int W2 = dp ? (W - pad) : W;
+    const float inv_scale = 1.0f / upscale;
+
+    // 清零输出缓冲区
+    memset(O, 0, H2 * W2 * C * sizeof(int8_t));
+
+    if(dp) {
+        // Depthwise卷积模式 -----------------------------------------------
+        const int block_size = (int)ceilf(upscale) + 1;
+        #pragma omp parallel for collapse(3)
+        for (int i_in = 0; i_in < H - pad; i_in++) {
+            for (int j_in = 0; j_in < W - pad; j_in++) {
+                for (int k = 0; k < C; k++) {
+                    // 生成插值块
+                    int32_t val_MSB[block_size*block_size];
+                    int32_t val_LSB[block_size*block_size];
+                    memset(val_MSB, 0, sizeof(val_MSB));
+                    memset(val_LSB, 0, sizeof(val_LSB));
+
+                    // 卷积核遍历
+                    for (int m = 0; m < ksz; m++) {
+                        for (int n = 0; n < ksz; n++) {
+                            const int8_t val = I[((i_in + m) * W + (j_in + n)) * C + k];
+                            
+                            // LUT索引计算
+                            const int idx_MSB_base = (val >> 2) + 32 + (m*ksz + n)*64;
+                            const int idx_LSB_base = (val & 0x03) + (m*ksz + n)*4;
+                            
+                            // 动态插值核
+                            for(int dy = 0; dy < block_size; dy++) {
+                                for(int dx = 0; dx < block_size; dx++) {
+                                    const float ry = dy * inv_scale;
+                                    const float rx = dx * inv_scale;
+                                    const float wy = 1.0f - fabsf(ry - m);
+                                    const float wx = 1.0f - fabsf(rx - n);
+                                    const float w = fmaxf(wy * wx, 0.0f);
+                                    
+                                    val_MSB[dy*block_size + dx] += LUT_MSB[idx_MSB_base] * w;
+                                    val_LSB[dy*block_size + dx] += LUT_LSB[idx_LSB_base] * w;
+                                }
+                            }
+                        }
+                    }
+
+                    // 将插值块写入输出
+                    const int y_out_start = (int)(i_in * upscale);
+                    const int x_out_start = (int)(j_in * upscale);
+                    for(int dy = 0; dy < block_size; dy++) {
+                        for(int dx = 0; dx < block_size; dx++) {
+                            const int y_out = y_out_start + dy;
+                            const int x_out = x_out_start + dx;
+                            if(y_out >= H2 || x_out >= W2) continue;
+                            
+                            // 归一化并合并结果
+                            const int idx = (y_out * W2 + x_out) * C + k;
+                            int32_t msb = Round_Div_s32(val_MSB[dy*block_size + dx], ksz*ksz);
+                            int32_t lsb = Round_Div_s32(val_LSB[dy*block_size + dx], ksz*ksz);
+                            
+                            #pragma omp atomic update
+                            O[idx] += (msb << 2) | lsb;
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        // Pointwise混合模式 -----------------------------------------------
+        #pragma omp parallel for collapse(3)
+        for (int i_in = 0; i_in < H; i_in++) {
+            for (int j_in = 0; j_in < W; j_in++) {
+                for (int k = 0; k < C; k++) {
+                    const int8_t val = I[(i_in * W + j_in) * C + k];
+                    const int8_t msb = (val >> 2) & 0x3F;
+                    const int8_t lsb = val & 0x03;
+
+                    // 计算输出影响区域
+                    const int y_out_center = (int)(i_in * upscale);
+                    const int x_out_center = (int)(j_in * upscale);
+                    const int spread = (int)ceilf(upscale);
+                    
+                    // 相位相关插值
+                    for(int dy = -spread; dy <= spread; dy++) {
+                        for(int dx = -spread; dx <= spread; dx++) {
+                            const int y_out = y_out_center + dy;
+                            const int x_out = x_out_center + dx;
+                            if(y_out < 0 || y_out >= H2 || x_out < 0 || x_out >= W2) continue;
+                            
+                            
+                            // 计算相位权重
+                            const float ry = fabsf(y_out * inv_scale - i_in);
+                            const float rx = fabsf(x_out * inv_scale - j_in);
+                            const float w = (1.0f - ry) * (1.0f - rx);
+                            if(w < 1e-6f) continue;
+
+                            // 动态选择LUT
+                            const int phase_y = (int)(ry * upscale * 2) % 2;
+                            const int phase_x = (int)(rx * upscale * 2) % 2;
+                            const int phase = phase_y * 2 + phase_x;
+                            
+                            // 量化参数
+                            int rat_lsb = RAT_LSB[phase] - offset_LSB;
+                            int rat_msb = RAT_MSB[phase] - offset_MSB;
+                            
+                            // 结果累加
+                            const int idx = (y_out * W2 + x_out) * C + k;
+                            int32_t trg = ((msb * rat_msb / scale_MSB) << 2) | 
+                                         (lsb * rat_lsb / scale_LSB);
+                            
+                            #pragma omp atomic update
+                            O[idx] += (int8_t)(trg * w);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 后处理：裁剪和饱和
+    #pragma omp parallel for
+    for(int i = 0; i < H2*W2*C; i++) {
+        if(clamp8) {
+            O[i] = Clamp_s32_s32(O[i], 8, 1);
+        } else {
+            O[i] = Clamp_s32_s32(O[i] >> 2, 6, 1) << 2 | 
+                   Clamp_s32_s32(O[i] & 0x03, 2, 0);
+        }
+    }
+}
+
 
 
 // ======================================================================== //

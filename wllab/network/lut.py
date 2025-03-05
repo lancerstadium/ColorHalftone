@@ -4551,3 +4551,225 @@ class TinyLUTNetOpt(nn.Module):
             res = res.view(B, C, H*self.upscale, W*self.upscale)
 
         return (res + 128) / 255 if is_trs else res + 128
+
+
+
+class VarLUTNet(nn.Module):
+    def __init__(self, upscale=4, n_feature=16):
+        super().__init__()
+        self.dw = []
+        self.pw = []
+        # 初始化各模块
+        self.dw.append(DepthWiseOpt())
+        self.pw.append(PointConvOpt(upscale=4, out_ch=16,n_feature=n_feature, inner_shared=1, row_shared=False))
+        self.dw.append(DepthWiseOpt())
+        self.pw.append(PointConvOpt(upscale=1, out_ch=16,n_feature=n_feature, inner_shared=1, row_shared=False))
+        self.dw.append(DepthWiseOpt())
+        self.pw.append(self.pw[0])
+        self.dw.append(DepthWiseOpt())
+        self.pw.append(self.pw[1])
+        self.upscale = upscale
+        
+        # 量化参数（减少参数数量）
+        self.clip_params = nn.Parameter(torch.full((12, upscale * upscale, 1, 1), 0.8))
+        
+    @staticmethod
+    def low_high(image):
+        xl = torch.remainder(image, 4)
+        xh = torch.div(image, 4)
+        return xl, xh
+
+    def forward(self, x, stage=0, is_train=True):
+        # 启用混合精度训练
+        # with torch.cuda.amp.autocast():
+        with torch.amp.autocast('cuda'):
+            # 输入预处理
+            x = x * 255 if stage == 0 else x
+            x = (x - 128).clamp(-128, 127) if stage == 0 else x
+            
+            # 通道维度处理
+            B, C, H, W = x.size()
+            x = x.view(B*C, 1, H, W)
+            xl, xh = self.low_high(x)
+            xll = xl
+            xhl = xh
+
+            if is_train:
+                pads = ()
+                if stage == 0:
+                    pads = (2, 0, 2, 0)
+                elif stage == 1:
+                    pads = (2, 0, 0, 2)
+                elif stage == 2:
+                    pads = (0, 2, 0, 2)
+                elif stage == 3:
+                    pads = (0, 2, 2, 0)
+                # Pad X
+                xl = F.pad(xl, pads, mode='replicate')
+                xh = F.pad(xh, pads, mode='replicate')
+
+                # Layer 0: Down & Dowp
+                xH = torch.stack(self.down(xh, xl, h=True), dim=1).sum(dim=1)
+                xL = torch.stack(self.down(xh, xl, h=False), dim=1).sum(dim=1)
+                
+                # 及时释放中间变量
+                if stage == 0:
+                    xh = (XQuantize.apply(xH / 9) + xh[:,:,2:,2:]).clamp(-32, 31)
+                    xl = (XQuantize.apply(xL / 9) + xl[:,:,2:,2:]).clamp(0, 3)
+                elif stage == 1:
+                    xh = (XQuantize.apply(xH / 9) + xh[:,:,0:H,2:]).clamp(-32, 31)
+                    xl = (XQuantize.apply(xL / 9) + xl[:,:,0:H,2:]).clamp(0, 3)
+                elif stage == 2:
+                    xh = (XQuantize.apply(xH / 9) + xh[:,:,0:H,0:W]).clamp(-32, 31)
+                    xl = (XQuantize.apply(xL / 9) + xl[:,:,0:H,0:W]).clamp(0, 3)
+                elif stage == 3:
+                    xh = (XQuantize.apply(xH / 9) + xh[:,:,2:,0:W]).clamp(-32, 31)
+                    xl = (XQuantize.apply(xL / 9) + xl[:,:,2:,0:W]).clamp(0, 3)
+
+                del xH, xL
+                torch.cuda.empty_cache()
+
+                xH = self.dw[stage](xh * self.clip_params[stage * 4 + 0], xl, h=True, s=True, l=0).sum(dim=1)
+                xL = self.dw[stage](xh, xl * self.clip_params[stage * 4 + 1], h=False, s=True, l=0).sum(dim=1)
+
+                xh = (XQuantize.apply(xH / 16) + xh).clamp(-32, 31)
+                xl = (XQuantize.apply(xL / 16) + xl).clamp(0, 3)
+                del xH, xL
+                torch.cuda.empty_cache()
+
+                # Concat ResBlock
+                xh = XQuantize.apply(xh * (1 - self.clip_params[stage * 4 + 2]) + xhl * self.clip_params[stage * 4 + 2]).clamp(-32, 31)
+                xl = XQuantize.apply(xl * (1 - self.clip_params[stage * 4 + 3]) + xll * self.clip_params[stage * 4 + 3]).clamp(0, 3)
+
+                del xll, xhl
+                res = XQuantize.apply(xh * 4 + xl).clamp(-128, 127)
+
+                # 上采样与后处理
+                res = nn.PixelShuffle(self.upscale)(res)
+                res = res.view(B, C, H*self.upscale, W*self.upscale)
+
+                res = (res + 128) if stage == 3 else res
+                res = (res / 256) if stage == 3 else res
+                return res
+            else:
+
+                # Pad 1
+                xl = F.pad(xl, (2, 0, 2, 0), mode='replicate')
+                xh = F.pad(xh, (2, 0, 2, 0), mode='replicate')
+
+                # Layer 0: Down & Dowp
+                xH = torch.stack(self.dw[0](xh, xl, h=True), dim=1).sum(dim=1)
+                xL = torch.stack(self.dw[0](xh, xl, h=False), dim=1).sum(dim=1)
+                
+                # 及时释放中间变量
+                xh = (XQuantize.apply(xH / 9) + xh[:,:,2:,2:]).clamp(-32, 31)
+                xl = (XQuantize.apply(xL / 9) + xl[:,:,2:,2:]).clamp(0, 3)
+                del xH, xL
+                torch.cuda.empty_cache()
+
+                xH = self.pw[0](xh * self.clip_params[0], xl, h=True, s=True, l=0).sum(dim=1)
+                xL = self.pw[0](xh, xl * self.clip_params[1], h=False, s=True, l=0).sum(dim=1)
+                
+                xh = (XQuantize.apply(xH / 16) + xh).clamp(-32, 31)
+                xl = (XQuantize.apply(xL / 16) + xl).clamp(0, 3)
+                del xH, xL
+                torch.cuda.empty_cache()
+
+                # Concat ResBlock
+                xh = XQuantize.apply(xh * (1 - self.clip_params[2]) + xhl * self.clip_params[2]).clamp(-32, 31)
+                xl = XQuantize.apply(xl * (1 - self.clip_params[3]) + xll * self.clip_params[3]).clamp(0, 3)
+                xll = xl
+                xhl = xh
+
+                # Pad 2
+                xl = F.pad(xl, (2, 0, 0, 2), mode='replicate')
+                xh = F.pad(xh, (2, 0, 0, 2), mode='replicate')
+
+                # Layer 1: DepthConv
+                xH = torch.stack(self.dw[1](xh, xl, h=True), dim=1).sum(dim=1)
+                xL = torch.stack(self.dw[1](xh, xl, h=False), dim=1).sum(dim=1)
+                
+                # 及时释放中间变量
+                xh = (XQuantize.apply(xH / 9) + xh[:,:,0:H,2:]).clamp(-32, 31)
+                xl = (XQuantize.apply(xL / 9) + xl[:,:,0:H,2:]).clamp(0, 3)
+                del xH, xL
+                torch.cuda.empty_cache()
+
+                # Layer 2: PointConv
+                xH = self.pw[1](xh * self.clip_params[4], xl, h=True, s=True, l=0).sum(dim=1)
+                xL = self.pw[1](xh, xl * self.clip_params[5], h=False, s=True, l=0).sum(dim=1)
+                
+                xh = (XQuantize.apply(xH / 16) + xh).clamp(-32, 31)
+                xl = (XQuantize.apply(xL / 16) + xl).clamp(0, 3)
+                del xH, xL
+                torch.cuda.empty_cache()
+
+                # Concat ResBlock
+                xh = XQuantize.apply(xh * (1 - self.clip_params[6]) + xhl * self.clip_params[6]).clamp(-32, 31)
+                xl = XQuantize.apply(xl * (1 - self.clip_params[7]) + xll * self.clip_params[7]).clamp(0, 3)
+                xll = xl
+                xhl = xh
+
+                # Pad 3
+                xl = F.pad(xl, (0, 2, 0, 2), mode='replicate')
+                xh = F.pad(xh, (0, 2, 0, 2), mode='replicate')
+
+                # Layer 3: Depthwise
+                xH = torch.stack(self.dw[2](xh, xl, h=True), dim=1).sum(dim=1)
+                xL = torch.stack(self.dw[2](xh, xl, h=False), dim=1).sum(dim=1)
+                
+                # 及时释放中间变量
+                xh = (XQuantize.apply(xH / 9) + xh[:,:,0:W,0:H]).clamp(-32, 31)
+                xl = (XQuantize.apply(xL / 9) + xl[:,:,0:W,0:H]).clamp(0, 3)
+                del xH, xL
+                torch.cuda.empty_cache()
+
+                # Layer 4: Pointwise
+                xH = self.pw[2](xh * self.clip_params[8], xl, h=True, s=True, l=0).sum(dim=1)
+                xL = self.pw[2](xh, xl * self.clip_params[9], h=False, s=True, l=0).sum(dim=1)
+                
+                xh = (XQuantize.apply(xH / 16) + xh).clamp(-32, 31)
+                xl = (XQuantize.apply(xL / 16) + xl).clamp(0, 3)
+                del xH, xL
+                torch.cuda.empty_cache()
+
+                # Concat ResBlock
+                xh = XQuantize.apply(xh * (1 - self.clip_params[10]) + xhl * self.clip_params[10]).clamp(-32, 31)
+                xl = XQuantize.apply(xl * (1 - self.clip_params[11]) + xll * self.clip_params[11]).clamp(0, 3)
+                xll = xl
+                xhl = xh
+
+                # Pad 4
+                xl = F.pad(xl, (0, 2, 2, 0), mode='replicate')
+                xh = F.pad(xh, (0, 2, 2, 0), mode='replicate')
+
+                # Layer 5: UpDepth
+                xH = torch.stack(self.dw[3](xh, xl, h=True), dim=1).sum(dim=1)
+                xL = torch.stack(self.dw[3](xh, xl, h=False), dim=1).sum(dim=1)
+                
+                # 及时释放中间变量
+                xh = (XQuantize.apply(xH / 9) + xh[:,:,2:,0:W]).clamp(-32, 31)
+                xl = (XQuantize.apply(xL / 9) + xl[:,:,2:,0:W]).clamp(0, 3)
+                del xH, xL
+                torch.cuda.empty_cache()
+
+                # Layer 6: UpPoint
+                xH = self.pw[3](xh * self.clip_params[8], xl, h=True, s=True, l=0).sum(dim=1)
+                xL = self.pw[3](xh, xl * self.clip_params[9], h=False, s=True, l=0).sum(dim=1)
+                
+                xh = (XQuantize.apply(xH / 16) + xh).clamp(-32, 31)
+                xl = (XQuantize.apply(xL / 16) + xl).clamp(0, 3)
+                del xH, xL
+                torch.cuda.empty_cache()
+
+                # Accumulate ResBlock
+                # Concat ResBlock
+                xh = XQuantize.apply(xh * (1 - self.clip_params[10]) + xhl * self.clip_params[10]).clamp(-32, 31)
+                xl = XQuantize.apply(xl * (1 - self.clip_params[11]) + xll * self.clip_params[11]).clamp(0, 3)
+                del xll, xhl
+                res = XQuantize.apply(xh * 4 + xl).clamp(-128, 127)
+
+                # 上采样与后处理
+                res = nn.PixelShuffle(self.upscale)(res)
+                res = res.view(B, C, H*self.upscale, W*self.upscale)
+                return (res + 128) / 255 if stage == 0 else res + 128

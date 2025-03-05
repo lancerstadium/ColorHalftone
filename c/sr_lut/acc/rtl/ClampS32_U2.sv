@@ -4,7 +4,7 @@
  * Output       : y[31:0] - Clamped to the range of a sub-bit signed integer
  * Description  : Signed 32-bit clamp to the range of a sub-bit signed integer.
  * Author       : lancerstadium
- * Date         : Sun Mar  2 18:12:13 CST 2025
+ * Date         : Tue Mar  4 16:41:09 CST 2025
  * License      : MIT
  */
 

@@ -68,21 +68,19 @@ class RTLGenerator:
             sign=sign
         )
 
-    def DepthLUT(self, C=3, H=50, W=50, upscale=4, ksz=3, datawidth=8, msb_path="", lsb_path=""):
+    def DepthLUT(self, H=50, W=50, upscale=4, ksz=3, msb_path="", lsb_path=""):
         msb_name = msb_path.split('/')[-1].split('.')[0]
         lsb_name = lsb_path.split('/')[-1].split('.')[0]
-        self.LUTTable(npy_path=msb_path, batch_len=upscale**2, npy_name=msb_name)
-        self.LUTTable(npy_path=lsb_path, batch_len=upscale**2, npy_name=lsb_name)
+        self.LUTTable(npy_path=msb_path, batch_len=upscale**2 // 4, npy_name=msb_name)
+        self.LUTTable(npy_path=lsb_path, batch_len=upscale**2 // 4, npy_name=lsb_name)
         self.gen(
-            out_name=f"DepthLUT_{C}x{H}x{W}_K{ksz}_U{upscale}_D{datawidth}",
+            out_name=f"DepthLUT_{H}x{W}_K{ksz}_U{upscale}_D8",
             temp_path=os.path.join(self.temp_dir, 'DepthLUT.sv'),
             date=os.popen('date').read().strip(),
-            C=C,
             H=H,
             W=W,
             UPSCALE=upscale,
             KSZ=ksz,
-            DW=datawidth,
             msb_name=msb_name,
             lsb_name=lsb_name
         )
@@ -100,7 +98,8 @@ class RTLGenerator:
             date=os.popen('date').read().strip(),
             table=table,
             shape=shape,
-            BATCH_LEN=batch_len
+            BATCH_LEN=batch_len,
+            is_dynamic=False
         )
         
 
