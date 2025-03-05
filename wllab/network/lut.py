@@ -4354,7 +4354,8 @@ class PointConvOpt(nn.Module):
             B, C, H, W = x.shape
             x = x.view(B*C, 1, H, W)
             idx = l // self.inner_shared if self.row_shared else l % self.inner_shared
-            out = self.msb_conv[idx](x).to(device) if h else self.lsb_conv[idx](x).to(device)
+            conv = self.msb_conv[idx].to(device) if h else self.lsb_conv[idx].to(device)
+            out = conv(x)
             return out.view(B, C, self.out_ch, H, W).clamp(-128, 127)
 
 
