@@ -4335,7 +4335,8 @@ class PointConvOpt(nn.Module):
             for i in range(num_modules):
                 idx = i // self.inner_shared if self.row_shared else i % self.inner_shared
                 # 逐个处理每个卷积模块并累加结果
-                out_i = self.msb_conv[idx](x).to(device) if h else self.lsb_conv[idx](x).to(device)
+                conv = self.msb_conv[idx].to(device) if h else self.lsb_conv[idx].to(device)
+                out_i = conv(x)
                 out_i = out_i.view(B, C, self.out_ch, H, W).clamp(-128, 127)
                 if output is None:
                     output = out_i
