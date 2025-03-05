@@ -4233,26 +4233,25 @@ class DepthWiseOpt(torch.nn.Module):
         self.pad = 1 if is_pad else 0
         # 合并高低分支权重 [2, 9*C, 1, 3, 3]
         base_kernel = torch.eye(9, dtype=torch.float32).view(1, 9, 1, 3, 3)
-        # float16
-        self.weights = nn.Parameter(base_kernel.repeat(2, channel, 1, 1, 1))
-        self.register_buffer('mask', (self.weights != 0))
+        self.weights = nn.Parameter(base_kernel.repeat(2, channel, 1, 1, 1))  # [2,9C,1,3,3]
+        self.register_buffer('mask', (self.weights != 0).float())
         # 高低都有bias
         self.bias = nn.Parameter(torch.zeros(2, 9, channel))
 
-    def forward(self, x, h):
-        B, C, H, W = x.size()
+    def forward(self, xh, xl, h):
+        B, C, H, W = xh.size() if h else xl.size()
         idx = 0 if h else 1
         
-        # 合并卷积计算: 
-        weights = self.weights[idx].view(-1, 1, 3, 3)
+        # 合并卷积计算
+        x = xh if h else xl
+        weights = self.weights[idx].view(-1, 1, 3, 3)  # [9C,1,3,3]
         mask = self.mask[idx].view(-1, 1, 3, 3)
-        bias = self.bias[idx].view(-1)
         
         # 高效卷积实现（保持 clamp 顺序）
         outputs = F.conv2d(
             x.repeat_interleave(9, dim=1),  # [B, 9C, H, W]
             weights * mask,
-            bias=bias,
+            bias=self.bias[idx].view(-1),
             padding=self.pad,
             groups=9*C
         ).view(B, 9, self.channel, H-(2 - self.pad * 2), W-(2 - self.pad * 2)).clamp(-128, 127)  # 保留原有 clamp
@@ -4263,6 +4262,7 @@ class PointOneChannelOpt(nn.Module):
     def __init__(self, in_ch=1, out_ch=16, n_feature=16):
         super().__init__()
         # 优化1：减少通道数(64->32)和层数
+        self.bias = nn.Parameter(torch.zeros(out_ch))
         self.conv = nn.Sequential(
             nn.Conv2d(in_ch, n_feature, 1),
             nn.ReLU(inplace=True),
@@ -4319,8 +4319,9 @@ class PointConvOpt(nn.Module):
             self.lsb_conv.append(PointOneChannelOpt(in_ch=in_ch, out_ch=out_ch, n_feature=n_feature))
 
         
-    def forward(self, x, h, s, l):
+    def forward(self, xh, xl, h, s, l):
         if s:
+            x = xh if h else xl
             B, C, H, W = x.shape
             x = x.view(B*C, 1, H, W)
             
@@ -4329,8 +4330,7 @@ class PointConvOpt(nn.Module):
             for i in range(num_modules):
                 idx = i // self.inner_shared if self.row_shared else i % self.inner_shared
                 # 逐个处理每个卷积模块并累加结果
-                conv = self.msb_conv[idx] if h else self.lsb_conv[idx]
-                out_i = conv(x)
+                out_i = self.msb_conv[idx](x) if h else self.lsb_conv[idx](x)
                 out_i = out_i.view(B, C, self.out_ch, H, W).clamp(-128, 127)
                 if output is None:
                     output = out_i
@@ -4338,18 +4338,18 @@ class PointConvOpt(nn.Module):
                     output += out_i
                 # 及时释放中间变量（可选）
                 del out_i
-                torch.cuda.empty_cache()
+                # torch.cuda.empty_cache()
             
             # 计算均值并确保结果在正确设备上
             output = XQuantize.apply(output / num_modules).clamp(-128, 127)
             return output
         else:
             # 处理单一路径
+            x = xh if h else xl
             B, C, H, W = x.shape
             x = x.view(B*C, 1, H, W)
             idx = l // self.inner_shared if self.row_shared else l % self.inner_shared
-            conv = self.msb_conv[idx] if h else self.lsb_conv[idx]
-            out = conv(x)
+            out = self.msb_conv[idx](x) if h else self.lsb_conv[idx](x)
             return out.view(B, C, self.out_ch, H, W).clamp(-128, 127)
 
 
@@ -4551,228 +4551,3 @@ class TinyLUTNetOpt(nn.Module):
             res = res.view(B, C, H*self.upscale, W*self.upscale)
 
         return (res + 128) / 255 if is_trs else res + 128
-
-
-
-class VarLUTNet(nn.Module):
-    def __init__(self, upscale=4, n_feature=16):
-        super().__init__()
-        self.dw = []
-        self.pw = []
-        # 初始化各模块
-        self.dw.append(DepthWiseOpt())
-        self.pw.append(PointConvOpt(upscale=4, out_ch=16,n_feature=n_feature, inner_shared=1, row_shared=False))
-        self.dw.append(DepthWiseOpt())
-        self.pw.append(PointConvOpt(upscale=1, out_ch=16,n_feature=n_feature, inner_shared=1, row_shared=False))
-        self.dw.append(DepthWiseOpt())
-        self.pw.append(self.pw[0])
-        self.dw.append(DepthWiseOpt())
-        self.pw.append(self.pw[1])
-        self.upscale = upscale
-        
-        # 量化参数（减少参数数量）
-        self.clip_params = nn.Parameter(torch.full((16, upscale * upscale, 1, 1), 0.8))
-        
-    @staticmethod
-    def low_high(image):
-        xl = torch.remainder(image, 4)
-        xh = torch.div(image, 4)
-        return xl, xh
-
-    def forward(self, x, stage=0, is_seg=False):
-        # 启用混合精度训练
-        # with torch.cuda.amp.autocast():
-        with torch.amp.autocast('cuda'):
-            device = x.device
-            # 输入预处理
-            x = x * 255 if stage == 0 else x
-            x = (x - 128).clamp(-128, 127) if stage == 0 else x
-            
-            # 通道维度处理
-            B, C, H, W = x.size()
-            x = x.view(B*C, 1, H, W).to(device)
-            xl, xh = self.low_high(x)
-            xl = xl.to(device)
-            xh = xh.to(device)
-            xll = xl
-            xhl = xh
-
-            if is_seg:
-                pads = ()
-                if stage == 0:
-                    pads = (2, 0, 2, 0)
-                elif stage == 1:
-                    pads = (2, 0, 0, 2)
-                elif stage == 2:
-                    pads = (0, 2, 0, 2)
-                elif stage == 3:
-                    pads = (0, 2, 2, 0)
-                # Pad X
-                xl = F.pad(xl, pads, mode='replicate')
-                xh = F.pad(xh, pads, mode='replicate')
-
-                # Layer 0: Down & Dowp
-                xH = torch.stack(self.dw[stage](xh, h=True), dim=1).sum(dim=1)
-                xL = torch.stack(self.dw[stage](xl, h=False), dim=1).sum(dim=1)
-                
-                # 及时释放中间变量
-                if stage == 0:
-                    xh = (XQuantize.apply(xH / 9) + xh[:,:,2:,2:]).clamp(-32, 31)
-                    xl = (XQuantize.apply(xL / 9) + xl[:,:,2:,2:]).clamp(0, 3)
-                elif stage == 1:
-                    xh = (XQuantize.apply(xH / 9) + xh[:,:,0:H,2:]).clamp(-32, 31)
-                    xl = (XQuantize.apply(xL / 9) + xl[:,:,0:H,2:]).clamp(0, 3)
-                elif stage == 2:
-                    xh = (XQuantize.apply(xH / 9) + xh[:,:,0:H,0:W]).clamp(-32, 31)
-                    xl = (XQuantize.apply(xL / 9) + xl[:,:,0:H,0:W]).clamp(0, 3)
-                elif stage == 3:
-                    xh = (XQuantize.apply(xH / 9) + xh[:,:,2:,0:W]).clamp(-32, 31)
-                    xl = (XQuantize.apply(xL / 9) + xl[:,:,2:,0:W]).clamp(0, 3)
-
-                del xH, xL
-                torch.cuda.empty_cache()
-
-                xH = self.pw[stage](xh * self.clip_params[stage * 4 + 0], h=True, s=True, l=0).sum(dim=1)
-                xL = self.pw[stage](xl * self.clip_params[stage * 4 + 1], h=False, s=True, l=0).sum(dim=1)
-
-                xh = (XQuantize.apply(xH / 16) + xh).clamp(-32, 31)
-                xl = (XQuantize.apply(xL / 16) + xl).clamp(0, 3)
-                del xH, xL
-                torch.cuda.empty_cache()
-
-                # Concat ResBlock
-                xh = XQuantize.apply(xh * (1 - self.clip_params[stage * 4 + 2]) + xhl * self.clip_params[stage * 4 + 2]).clamp(-32, 31)
-                xl = XQuantize.apply(xl * (1 - self.clip_params[stage * 4 + 3]) + xll * self.clip_params[stage * 4 + 3]).clamp(0, 3)
-
-                del xll, xhl
-                res = XQuantize.apply(xh * 4 + xl).clamp(-128, 127)
-
-                # 上采样与后处理
-                res = nn.PixelShuffle(self.upscale)(res)
-                res = res.view(B, C, H*self.upscale, W*self.upscale)
-
-                res = (res + 128) if stage == 3 else res
-                res = (res / 256) if stage == 3 else res
-                return res
-            else:
-
-                # Pad 1
-                xl = F.pad(xl, (2, 0, 2, 0), mode='replicate')
-                xh = F.pad(xh, (2, 0, 2, 0), mode='replicate')
-
-                # Layer 0: Down & Dowp
-                xH = torch.stack(self.dw[0](xh, h=True), dim=1).sum(dim=1)
-                xL = torch.stack(self.dw[0](xl, h=False), dim=1).sum(dim=1)
-                
-                # 及时释放中间变量
-                xh = (XQuantize.apply(xH / 9) + xh[:,:,2:,2:]).clamp(-32, 31)
-                xl = (XQuantize.apply(xL / 9) + xl[:,:,2:,2:]).clamp(0, 3)
-                del xH, xL
-                torch.cuda.empty_cache()
-
-                xH = self.pw[0](xh * self.clip_params[0], h=True, s=True, l=0).sum(dim=1)
-                xL = self.pw[0](xl * self.clip_params[1], h=False, s=True, l=0).sum(dim=1)
-                
-                xh = (XQuantize.apply(xH / 16) + xh).clamp(-32, 31)
-                xl = (XQuantize.apply(xL / 16) + xl).clamp(0, 3)
-                del xH, xL
-                torch.cuda.empty_cache()
-
-                # Concat ResBlock
-                xh = XQuantize.apply(xh * (1 - self.clip_params[2]) + xhl * self.clip_params[2]).clamp(-32, 31)
-                xl = XQuantize.apply(xl * (1 - self.clip_params[3]) + xll * self.clip_params[3]).clamp(0, 3)
-                xll = xl
-                xhl = xh
-
-                # Pad 2
-                xl = F.pad(xl, (2, 0, 0, 2), mode='replicate')
-                xh = F.pad(xh, (2, 0, 0, 2), mode='replicate')
-
-                # Layer 1: DepthConv
-                xH = torch.stack(self.dw[1](xh, h=True), dim=1).sum(dim=1)
-                xL = torch.stack(self.dw[1](xl, h=False), dim=1).sum(dim=1)
-                
-                # 及时释放中间变量
-                xh = (XQuantize.apply(xH / 9) + xh[:,:,0:H,2:]).clamp(-32, 31)
-                xl = (XQuantize.apply(xL / 9) + xl[:,:,0:H,2:]).clamp(0, 3)
-                del xH, xL
-                torch.cuda.empty_cache()
-
-                # Layer 2: PointConv
-                xH = self.pw[1](xh * self.clip_params[4], h=True, s=True, l=0).sum(dim=1)
-                xL = self.pw[1](xl * self.clip_params[5], h=False, s=True, l=0).sum(dim=1)
-                
-                xh = (XQuantize.apply(xH / 16) + xh).clamp(-32, 31)
-                xl = (XQuantize.apply(xL / 16) + xl).clamp(0, 3)
-                del xH, xL
-                torch.cuda.empty_cache()
-
-                # Concat ResBlock
-                xh = XQuantize.apply(xh * (1 - self.clip_params[6]) + xhl * self.clip_params[6]).clamp(-32, 31)
-                xl = XQuantize.apply(xl * (1 - self.clip_params[7]) + xll * self.clip_params[7]).clamp(0, 3)
-                xll = xl
-                xhl = xh
-
-                # Pad 3
-                xl = F.pad(xl, (0, 2, 0, 2), mode='replicate')
-                xh = F.pad(xh, (0, 2, 0, 2), mode='replicate')
-
-                # Layer 3: Depthwise
-                xH = torch.stack(self.dw[2](xh, h=True), dim=1).sum(dim=1)
-                xL = torch.stack(self.dw[2](xl, h=False), dim=1).sum(dim=1)
-                
-                # 及时释放中间变量
-                xh = (XQuantize.apply(xH / 9) + xh[:,:,0:W,0:H]).clamp(-32, 31)
-                xl = (XQuantize.apply(xL / 9) + xl[:,:,0:W,0:H]).clamp(0, 3)
-                del xH, xL
-                torch.cuda.empty_cache()
-
-                # Layer 4: Pointwise
-                xH = self.pw[2](xh * self.clip_params[8], h=True, s=True, l=0).sum(dim=1)
-                xL = self.pw[2](xl * self.clip_params[9], h=False, s=True, l=0).sum(dim=1)
-                
-                xh = (XQuantize.apply(xH / 16) + xh).clamp(-32, 31)
-                xl = (XQuantize.apply(xL / 16) + xl).clamp(0, 3)
-                del xH, xL
-                torch.cuda.empty_cache()
-
-                # Concat ResBlock
-                xh = XQuantize.apply(xh * (1 - self.clip_params[10]) + xhl * self.clip_params[10]).clamp(-32, 31)
-                xl = XQuantize.apply(xl * (1 - self.clip_params[11]) + xll * self.clip_params[11]).clamp(0, 3)
-                xll = xl
-                xhl = xh
-
-                # Pad 4
-                xl = F.pad(xl, (0, 2, 2, 0), mode='replicate')
-                xh = F.pad(xh, (0, 2, 2, 0), mode='replicate')
-
-                # Layer 5: UpDepth
-                xH = torch.stack(self.dw[3](xh, h=True), dim=1).sum(dim=1)
-                xL = torch.stack(self.dw[3](xl, h=False), dim=1).sum(dim=1)
-                
-                # 及时释放中间变量
-                xh = (XQuantize.apply(xH / 9) + xh[:,:,2:,0:W]).clamp(-32, 31)
-                xl = (XQuantize.apply(xL / 9) + xl[:,:,2:,0:W]).clamp(0, 3)
-                del xH, xL
-                torch.cuda.empty_cache()
-
-                # Layer 6: UpPoint
-                xH = self.pw[3](xh * self.clip_params[12], h=True, s=True, l=0).sum(dim=1)
-                xL = self.pw[3](xl * self.clip_params[13], h=False, s=True, l=0).sum(dim=1)
-                
-                xh = (XQuantize.apply(xH / 16) + xh).clamp(-32, 31)
-                xl = (XQuantize.apply(xL / 16) + xl).clamp(0, 3)
-                del xH, xL
-                torch.cuda.empty_cache()
-
-                # Accumulate ResBlock
-                # Concat ResBlock
-                xh = XQuantize.apply(xh * (1 - self.clip_params[14]) + xhl * self.clip_params[14]).clamp(-32, 31)
-                xl = XQuantize.apply(xl * (1 - self.clip_params[15]) + xll * self.clip_params[15]).clamp(0, 3)
-                del xll, xhl
-                res = XQuantize.apply(xh * 4 + xl).clamp(-128, 127)
-
-                # 上采样与后处理
-                res = nn.PixelShuffle(self.upscale)(res)
-                res = res.view(B, C, H*self.upscale, W*self.upscale)
-                return (res + 128) / 255 if stage == 0 else res + 128
