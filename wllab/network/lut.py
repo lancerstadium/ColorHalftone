@@ -4406,7 +4406,7 @@ class TinyLUTNetOpt(nn.Module):
         self.upscale = upscale
         
         # 量化参数（减少参数数量）
-        self.clip_params = nn.Parameter(torch.full((12, upscale * upscale, 1, 1), 0.8))
+        self.clip_params = nn.Parameter(torch.full((16, upscale * upscale, 1, 1), 0.8))
         
     @staticmethod
     def low_high(image):
@@ -4531,8 +4531,8 @@ class TinyLUTNetOpt(nn.Module):
             torch.cuda.empty_cache()
 
             # Layer 6: UpPoint
-            xH = self.uppoint(xh * self.clip_params[8], xl, h=True, s=True, l=0).sum(dim=1)
-            xL = self.uppoint(xh, xl * self.clip_params[9], h=False, s=True, l=0).sum(dim=1)
+            xH = self.uppoint(xh * self.clip_params[12], xl, h=True, s=True, l=0).sum(dim=1)
+            xL = self.uppoint(xh, xl * self.clip_params[13], h=False, s=True, l=0).sum(dim=1)
             
             xh = (XQuantize.apply(xH / 16) + xh).clamp(-32, 31)
             xl = (XQuantize.apply(xL / 16) + xl).clamp(0, 3)
@@ -4541,8 +4541,8 @@ class TinyLUTNetOpt(nn.Module):
 
             # Accumulate ResBlock
             # Concat ResBlock
-            xh = XQuantize.apply(xh * (1 - self.clip_params[10]) + xhl * self.clip_params[10]).clamp(-32, 31)
-            xl = XQuantize.apply(xl * (1 - self.clip_params[11]) + xll * self.clip_params[11]).clamp(0, 3)
+            xh = XQuantize.apply(xh * (1 - self.clip_params[14]) + xhl * self.clip_params[14]).clamp(-32, 31)
+            xl = XQuantize.apply(xl * (1 - self.clip_params[15]) + xll * self.clip_params[15]).clamp(0, 3)
             del xll, xhl
             res = XQuantize.apply(xh * 4 + xl).clamp(-128, 127)
 
