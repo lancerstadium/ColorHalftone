@@ -4324,6 +4324,7 @@ class PointConvOpt(nn.Module):
 
         
     def forward(self, xh, xl, h, s, l):
+        device = xh.device
         if s:
             x = xh if h else xl
             B, C, H, W = x.shape
@@ -4334,7 +4335,7 @@ class PointConvOpt(nn.Module):
             for i in range(num_modules):
                 idx = i // self.inner_shared if self.row_shared else i % self.inner_shared
                 # 逐个处理每个卷积模块并累加结果
-                out_i = self.msb_conv[idx](x) if h else self.lsb_conv[idx](x)
+                out_i = self.msb_conv[idx](x).to(device) if h else self.lsb_conv[idx](x).to(device)
                 out_i = out_i.view(B, C, self.out_ch, H, W).clamp(-128, 127)
                 if output is None:
                     output = out_i
@@ -4353,7 +4354,7 @@ class PointConvOpt(nn.Module):
             B, C, H, W = x.shape
             x = x.view(B*C, 1, H, W)
             idx = l // self.inner_shared if self.row_shared else l % self.inner_shared
-            out = self.msb_conv[idx](x) if h else self.lsb_conv[idx](x)
+            out = self.msb_conv[idx](x).to(device) if h else self.lsb_conv[idx](x).to(device)
             return out.view(B, C, self.out_ch, H, W).clamp(-128, 127)
 
 
