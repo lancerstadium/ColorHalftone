@@ -4252,7 +4252,7 @@ class DepthWiseOpt(torch.nn.Module):
         outputs = F.conv2d(
             x.repeat_interleave(9, dim=1),  # [B, 9C, H, W]
             weights * mask,
-            bias=self.bias[idx].view(-1),
+            bias=self.bias[idx].view(-1).half(),
             padding=self.pad,
             groups=9*C
         ).view(B, 9, self.channel, H-(2 - self.pad * 2), W-(2 - self.pad * 2)).clamp(-128, 127)  # 保留原有 clamp
