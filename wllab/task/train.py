@@ -170,8 +170,7 @@ def train_sr(
                         # 前向传播
                         orx = F.pad(torch.rot90(org, i, [2, 3]), pad_tuple, mode='replicate').to(device)
                         out = torch.zeros_like(ref).to(device)
-                        for stage in range(4):
-                            out += model(orx).to(device)
+                        out = model(orx).to(device)
                         if is_acc:
                             out += torch.rot90(out, -i, [2, 3]).to(device)
                         else:
