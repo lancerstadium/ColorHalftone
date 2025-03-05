@@ -4266,7 +4266,6 @@ class PointOneChannelOpt(nn.Module):
         super().__init__()
         # 优化1：减少通道数(64->32)和层数
         # set type to half
-        self.bias = nn.Parameter(torch.zeros(out_ch).half())
         self.conv = nn.Sequential(
             nn.Conv2d(in_ch, n_feature, 1),
             nn.ReLU(inplace=True),
@@ -4274,8 +4273,9 @@ class PointOneChannelOpt(nn.Module):
         ).half()
 
     def forward(self, x):
+        device = x.device
         # 保留量化逻辑但优化执行顺序
-        return XQuantize.apply(self.conv(x)).clamp(-128, 127)
+        return XQuantize.apply(self.conv(x).to(device)).clamp(-128, 127)
 
 # class PointConvOpt(nn.Module):
 #     def __init__(self, upscale=4, out_ch=16, n_feature=32):
