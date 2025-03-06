@@ -73,7 +73,7 @@ def TRAIN_SR():
     # model = HalftoneNet(in_channels=3, num_classes=64, num_features=128, block_size=3, scale=4)
     # model = LogicLUTNet(kernel_size=3, upscale=4, n_feature=64)
     # model = TinyLUTNetOpt(upscale=4, n_feature=16)
-    model = VarLUTNet(upscale=4, n_feature=16, in_ch=3)
+    model = VarLUTNet(upscale=4, n_feature=32, in_ch=3)
 
     # 开始训练
     train_sr(

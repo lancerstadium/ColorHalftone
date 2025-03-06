@@ -4711,7 +4711,7 @@ class VarLUTResBlock(nn.Module):
         del xH, xL
         torch.cuda.empty_cache()
         # 6. Res
-        if C == self.out_ch:
+        if self.upscale == 1:
             xh = self.Round(xh + xhh[:,:,2:,2:] * self.clip3[0]).clamp(self.msb_min, self.msb_max)
             xl = self.Round(xl + xll[:,:,2:,2:] * self.clip3[1]).clamp(self.lsb_min, self.lsb_max)
         else:
@@ -4739,6 +4739,8 @@ class VarLUTNet(nn.Module):
         self.fina = VarLUTResBlock(upscale=4, in_ch = 3,out_ch=upscale * upscale,n_feature=n_feature,pw2=self.shared_pw2,rot=0)
 
     def forward(self, x):
+        x = x * 255
+        x = (x - 128).clamp(-128, 127)
         x1 = self.blk1(x)
         x2 = self.blk2(x)
         x3 = self.blk3(x)
@@ -4746,6 +4748,8 @@ class VarLUTNet(nn.Module):
         x = self.Round((x1 + x2 + x3 + x4).div(4))
         x = self.fina(x)
         x = nn.PixelShuffle(self.upscale)(x)
+        x = (x + 128).clamp(0, 255)
+        x = x / 255
         return x
         
         
