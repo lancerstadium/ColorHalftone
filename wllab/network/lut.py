@@ -4691,12 +4691,15 @@ class VarLUTResBlock(nn.Module):
         # 3. Pointwise
         xh = self.pw1(xh * self.clip1[0], h=True ,s=True,l=0).clamp(self.msb_min, self.msb_max)
         xl = self.pw1(xl * self.clip1[1], h=False,s=True,l=0).clamp(self.lsb_min, self.lsb_max)
+        torch.cuda.empty_cache()
         # 4. Depthwise
         xh = self.dw(xh, h=True).clamp(self.msb_min, self.msb_max)
         xl = self.dw(xl, h=False).clamp(self.lsb_min, self.lsb_max)
+        torch.cuda.empty_cache()
         # 5. Pointwise
         xh = self.pw2(xh * self.clip2[0], h=True ,s=True,l=0).clamp(self.msb_min, self.msb_max)
         xl = self.pw2(xl * self.clip2[1], h=False,s=True,l=0).clamp(self.lsb_min, self.lsb_max)
+        torch.cuda.empty_cache()
         # 6. Res & Meg
         x = (self.meg(xl, xh) + x_org.repeat(1, self.upscale * self.upscale, 1, 1)).clamp(-128, 127)
         # 7. Rot Back
@@ -4722,9 +4725,13 @@ class VarLUTNet(nn.Module):
             x = x * 255
             x = (x - 128).clamp(-128, 127)
             x1 = self.blk1(x, rot=0)
+            torch.cuda.empty_cache()
             x2 = self.blk2(x, rot=1)
+            torch.cuda.empty_cache()
             x3 = self.blk3(x, rot=2)
+            torch.cuda.empty_cache()
             x4 = self.blk4(x, rot=3)
+            torch.cuda.empty_cache()
             x = self.Round((x1 + x2 + x3 + x4) / 4).clamp(-128, 127)
             x = self.fina(x)
             x = nn.PixelShuffle(self.upscale)(x)
