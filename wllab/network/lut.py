@@ -4653,7 +4653,7 @@ class VarLUTResBlock(nn.Module):
         else:
             self.pw1 = pw1
         if dw is None:
-            self.dw = VarDepthWise(round_fn=round_fn, out_ch=n_feature)
+            self.dw = VarDepthWise(round_fn=round_fn, out_ch=n_feature, is_pad=True)
         else:
             self.dw = dw
         if pw2 is None:
@@ -4667,7 +4667,6 @@ class VarLUTResBlock(nn.Module):
         self.out_ch = out_ch
         self.n_feature = n_feature
         self.Round = round_fn
-        self.pad = (2, 0, 2, 0)
         self.msb_max = 2 ** self.msb_width - 1
         self.lsb_max = 2 ** self.lsb_width - 1
         self.msb_min = -2 ** self.msb_width
@@ -4686,7 +4685,6 @@ class VarLUTResBlock(nn.Module):
     def forward(self, x):
         # 1. Rot & Pad
         x_org = x
-        x = F.pad(x, pad=self.pad, mode='replicate')
         # 2. Segment
         xl, xh = self.seg(x)
         # 3. Pointwise
@@ -4724,7 +4722,8 @@ class VarLUTNet(nn.Module):
         x2 = self.blk2(x1)
         x3 = self.blk3(x2)
         x4 = self.blk4(x3)
-        x = self.fina(x4)
+        x = self.Round((x1 + x2 + x3 + x4) / 4).clamp(-128, 127)
+        x = self.fina(x)
         x = nn.PixelShuffle(self.upscale)(x)
         x = (x + 128).clamp(0, 255)
         x = x / 255
