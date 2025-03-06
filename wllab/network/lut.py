@@ -4541,11 +4541,12 @@ class Floor_STE(Function):
         return grad_outputs, None
 
 class VarDepthWise(torch.nn.Module):
-    def __init__(self, out_ch=16, is_pad=False,round_fn=Floor_STE.apply):
+    def __init__(self, out_ch=16, is_pad=False, lsb_width=2,round_fn=Floor_STE.apply):
         super().__init__()
         self.out_ch = out_ch
         self.pad = 1 if is_pad else 0
         self.Round = round_fn
+        self.lsb_width = lsb_width
         # 合并高低分支权重 [2, 9*C, 1, 3, 3]
         base_kernel = torch.eye(9, dtype=torch.float32).view(1, 9, 1, 3, 3)
         self.weights = nn.Parameter(base_kernel.repeat(2, out_ch, 1, 1, 1))  # [2,9C,1,3,3]
@@ -4554,6 +4555,7 @@ class VarDepthWise(torch.nn.Module):
         self.bias = nn.Parameter(torch.zeros(2, 9, out_ch))
 
     def forward(self, x, h):
+        mul_val = (128 >> self.lsb_width) if h else (2 << self.lsb_width)
         B, C, H, W = x.size()
         idx = 0 if h else 1
         
@@ -4569,8 +4571,8 @@ class VarDepthWise(torch.nn.Module):
             padding=self.pad,
             groups=9*C
         ).view(B, 9, self.out_ch, H-(2 - self.pad * 2), W-(2 - self.pad * 2))  # 保留原有 clamp
-        outputs = (torch.tanh(outputs) * 128).clamp(-128, 127)
-        outputs = self.Round(self.Round(outputs).sum(dim=1) / 9 + x[:,:,2:,2:])
+        outputs = torch.tanh(outputs) * mul_val
+        outputs = self.Round(outputs.sum(dim=1) / 9 + x[:,:,2:,2:])
         return outputs
 
 
@@ -4591,10 +4593,11 @@ class VarPointOneChannel(nn.Module):
         
 
 class VarPointwise(nn.Module):
-    def __init__(self, upscale=4, in_ch=1, out_ch=16, n_feature=16, inner_shared=1, row_shared=True,round_fn=Floor_STE.apply):
+    def __init__(self, upscale=4, in_ch=1, out_ch=16, n_feature=16, inner_shared=1, lsb_width=2, row_shared=True,round_fn=Floor_STE.apply):
         super().__init__()
         self.out_ch = out_ch
         self.upscale = upscale
+        self.lsb_width = lsb_width
         # 使用ModuleList存储卷积模块
         self.msb_conv = nn.ModuleList()
         self.lsb_conv = nn.ModuleList()
@@ -4610,17 +4613,18 @@ class VarPointwise(nn.Module):
 
         
     def forward(self, x, h, s, l):
+        mul_val = (128 >> self.lsb_width) if h else (2 << self.lsb_width)
         if s:
             B, C, H, W = x.shape
             x = x.view(B*C, 1, H, W)
-            
             output = None
             num_modules = self.upscale ** 2
+            
             for i in range(num_modules):
                 idx = i // self.inner_shared if self.row_shared else i % self.inner_shared
                 # 逐个处理每个卷积模块并累加结果
                 out_i = self.msb_conv[idx](x) if h else self.lsb_conv[idx](x)
-                out_i = out_i.view(B, C, self.out_ch, H, W) * 128
+                out_i = out_i.view(B, C, self.out_ch, H, W) * mul_val
                 if output is None:
                     output = out_i
                 else:
@@ -4638,7 +4642,7 @@ class VarPointwise(nn.Module):
             x = x.view(B*C, 1, H, W)
             idx = l // self.inner_shared if self.row_shared else l % self.inner_shared
             out = self.msb_conv[idx](x) if h else self.lsb_conv[idx](x)
-            return out.view(B, C, self.out_ch, H, W) * 128
+            return out.view(B, C, self.out_ch, H, W) * mul_val
 
 
 class VarLUTResBlock(nn.Module):
