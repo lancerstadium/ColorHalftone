@@ -4714,11 +4714,11 @@ class VarLUTNet(nn.Module):
         self.Round = round_fn
         self.upscale = upscale
         self.shared_pw = VarPointwise(upscale=upscale,out_ch=3 * upscale * upscale,n_feature=n_feature,round_fn=round_fn)
-        self.head = VarLUTResBlock(upscale=1, in_ch = 3 ,out_ch= 3 * upscale * upscale,n_feature=n_feature)
-        self.blk1 = VarLUTResBlock(upscale=4, out_ch= 3 * upscale * upscale,n_feature=n_feature,pw2=self.shared_pw)
-        self.blk2 = VarLUTResBlock(upscale=4, out_ch= 3 * upscale * upscale,n_feature=n_feature,pw2=self.shared_pw)
-        self.blk3 = VarLUTResBlock(upscale=4, out_ch= 3 * upscale * upscale,n_feature=n_feature,pw2=self.shared_pw)
-        self.blk4 = VarLUTResBlock(upscale=4, out_ch= 3 * upscale * upscale,n_feature=n_feature,pw2=self.shared_pw)
+        self.head = VarLUTResBlock(upscale=4, in_ch = 3 ,out_ch= 3 * upscale * upscale,n_feature=n_feature)
+        self.blk1 = VarLUTResBlock(upscale=2, out_ch= 3 * upscale * upscale,n_feature=n_feature,pw2=self.shared_pw)
+        self.blk2 = VarLUTResBlock(upscale=2, out_ch= 3 * upscale * upscale,n_feature=n_feature,pw2=self.shared_pw)
+        self.blk3 = VarLUTResBlock(upscale=2, out_ch= 3 * upscale * upscale,n_feature=n_feature,pw2=self.shared_pw)
+        self.blk4 = VarLUTResBlock(upscale=2, out_ch= 3 * upscale * upscale,n_feature=n_feature,pw2=self.shared_pw)
         
 
     def forward(self, x):
