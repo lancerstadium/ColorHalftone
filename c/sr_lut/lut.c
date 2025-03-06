@@ -554,14 +554,20 @@ void TinyLUT_forward_var_opt(TinyLUT *mdl, uint8_t* O, uint8_t* I, int H, int W,
         return;
     }
     // 0. Prepare
-    int H2 = (int)(H * mdl->scale + 0.5f);
-    int W2 = (int)(W * mdl->scale + 0.5f);
     int rot, pad = 2, scale = mdl->scale;
+    int H2 = H * scale;
+    int W2 = W * scale;
+    int H4 = H * 4;
+    int W4 = W * 4;
     int HP = H + pad;
     int WP = W + pad;
-    int C2 = C * mdl->scale * mdl->scale;
+    int C2 = C * scale * scale;
     int8_t *trg, **mid = (int8_t**)mdl->mid;
 
+    if(scale < 1 || scale > 4) {
+        printf("Unsupport scale x%d !\n", scale);
+        return;
+    }
 
     // 1. Static Alloc middle tensor
     MemInfo mem_info[10] = {
@@ -601,27 +607,27 @@ void TinyLUT_forward_var_opt(TinyLUT *mdl, uint8_t* O, uint8_t* I, int H, int W,
             mdl->lut[1]->data, 
             NULL, NULL, C, HP, WP, 
             0, 0, 0, 0, 
-            mdl->scale, 3, 1, 0, 1);
+            scale, 3, 1, 0, 1);
 
         // ---- Pointwise
         Intp_fuse_var_s8_hwc(
             mid[4], mid[3], 
             mdl->lut[2]->data, 
             mdl->lut[3]->data, 
-            TinyLUT_hl1, TinyLUT_hh1, C, H2, W2, 
+            TinyLUT_hl1, TinyLUT_hh1, C, H4, W4, 
             TinyLUT_hl1_scale, TinyLUT_hl1_offset, 
             TinyLUT_hh1_scale, TinyLUT_hh1_offset, 
-            mdl->scale, 0, 1, 0, 0);
+            scale, 0, 1, 0, 0);
 
         // ---- Pointwise
         Intp_fuse_var_s8_hwc(
             mid[5], mid[4], 
             mdl->lut[4]->data, 
             mdl->lut[5]->data, 
-            TinyLUT_hl2, TinyLUT_hh2, C, H2, W2, 
+            TinyLUT_hl2, TinyLUT_hh2, C, H4, W4, 
             TinyLUT_hl2_scale, TinyLUT_hl2_offset, 
             TinyLUT_hh2_scale, TinyLUT_hh2_offset, 
-            mdl->scale, 0, 1, 1, 0);
+            scale, 0, 1, 1, 0);
 
         // ---- Merge
         Rot_s8_hwc(mid[6], mid[5], C, H2, W2, 4 - rot);

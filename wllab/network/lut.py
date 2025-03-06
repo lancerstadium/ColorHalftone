@@ -4272,33 +4272,6 @@ class PointOneChannelOpt(nn.Module):
     def forward(self, x):
         # 保留量化逻辑但优化执行顺序
         return XQuantize.apply(self.conv(x)).clamp(-128, 127)
-
-# class PointConvOpt(nn.Module):
-#     def __init__(self, upscale=4, out_ch=16, n_feature=32):
-#         super().__init__()
-#         self.out_ch = out_ch
-#         self.upscale = upscale
-#         # 优化2：共享基础卷积层减少参数
-#         self.msb_conv = nn.ModuleList()
-#         self.lsb_conv = nn.ModuleList()
-#         for i in range(upscale ** 2):
-#             self.msb_conv.append(PointOneChannelOpt(out_ch=out_ch, n_feature=n_feature))
-#             self.lsb_conv.append(PointOneChannelOpt(out_ch=out_ch, n_feature=n_feature))
-        
-#     def forward(self, xh, xl, h, s, l):
-#         if s:
-#             # 优化3：并行处理所有通道
-#             x = xh if h else xl
-#             B, C, H, W = x.shape
-#             # 合并批次和通道维度进行批量处理
-#             x = x.view(B*C, 1, H, W)
-#             outputs = []
-#             for i in range(self.upscale ** 2):
-#                 outputs.append((self.msb_conv[i](x) if h else self.lsb_conv[i](x)).view(B, C, self.out_ch, H, W).clamp(-128, 127))
-#             outputs = torch.mean(torch.stack(outputs, dim=1), dim=1)
-#             return outputs
-#         else:
-#             return (self.msb_conv[l](xh) if h else self.lsb_conv[l](xl)).view(B, C, self.out_ch, H, W).clamp(-128, 127)
         
 
 class PointConvOpt(nn.Module):
@@ -4390,19 +4363,23 @@ class UpConvOpt(nn.Module):
         else:
             return self.msb_conv(xh) if h else self.lsb_conv(xl)
 
+
+
+
+
 class TinyLUTNetOpt(nn.Module):
     def __init__(self, upscale=4, n_feature=16):
         super().__init__()
         # 初始化各模块
-        self.down = DepthWiseOpt()
-        self.dowp = PointConvOpt(upscale=4, out_ch=16,n_feature=n_feature, inner_shared=1, row_shared=False)
-        self.depthconv = DepthWiseOpt()
-        self.pointconv = PointConvOpt(upscale=1, out_ch=16,n_feature=n_feature, inner_shared=1, row_shared=False)
-        self.depthwise = DepthWiseOpt()
-        self.pointwise = self.dowp
-        self.updepth = DepthWiseOpt()
+        self.dw1 = DepthWiseOpt()
+        self.pw1 = PointConvOpt(upscale=4, out_ch=16,n_feature=n_feature, inner_shared=1, row_shared=False)
+        self.dw2 = DepthWiseOpt()
+        self.pw2 = PointConvOpt(upscale=1, out_ch=16,n_feature=n_feature, inner_shared=1, row_shared=False)
+        self.dw3 = DepthWiseOpt()
+        self.pw3 = self.dowp
+        self.dw4 = DepthWiseOpt()
         # self.uppoint = PointConvOpt(upscale=4, out_ch=16,n_feature=n_feature, inner_shared=1, row_shared=False)
-        self.uppoint = self.pointconv
+        self.pw4 = self.pointconv
         self.upscale = upscale
         
         # 量化参数（减少参数数量）
@@ -4435,8 +4412,8 @@ class TinyLUTNetOpt(nn.Module):
             xh = F.pad(xh, (2, 0, 2, 0), mode='replicate')
 
             # Layer 0: Down & Dowp
-            xH = torch.stack(self.down(xh, xl, h=True), dim=1).sum(dim=1)
-            xL = torch.stack(self.down(xh, xl, h=False), dim=1).sum(dim=1)
+            xH = torch.stack(self.dw1(xh, xl, h=True), dim=1).sum(dim=1)
+            xL = torch.stack(self.dw1(xh, xl, h=False), dim=1).sum(dim=1)
             
             # 及时释放中间变量
             xh = (XQuantize.apply(xH / 9) + xh[:,:,2:,2:]).clamp(-32, 31)
@@ -4444,8 +4421,8 @@ class TinyLUTNetOpt(nn.Module):
             del xH, xL
             torch.cuda.empty_cache()
 
-            xH = self.dowp(xh * self.clip_params[0], xl, h=True, s=True, l=0).sum(dim=1)
-            xL = self.dowp(xh, xl * self.clip_params[1], h=False, s=True, l=0).sum(dim=1)
+            xH = self.pw1(xh * self.clip_params[0], xl, h=True, s=True, l=0).sum(dim=1)
+            xL = self.pw1(xh, xl * self.clip_params[1], h=False, s=True, l=0).sum(dim=1)
             
             xh = (XQuantize.apply(xH / 16) + xh).clamp(-32, 31)
             xl = (XQuantize.apply(xL / 16) + xl).clamp(0, 3)
@@ -4463,8 +4440,8 @@ class TinyLUTNetOpt(nn.Module):
             xh = F.pad(xh, (2, 0, 0, 2), mode='replicate')
 
             # Layer 1: DepthConv
-            xH = torch.stack(self.depthconv(xh, xl, h=True), dim=1).sum(dim=1)
-            xL = torch.stack(self.depthconv(xh, xl, h=False), dim=1).sum(dim=1)
+            xH = torch.stack(self.dw2(xh, xl, h=True), dim=1).sum(dim=1)
+            xL = torch.stack(self.dw2(xh, xl, h=False), dim=1).sum(dim=1)
             
             # 及时释放中间变量
             xh = (XQuantize.apply(xH / 9) + xh[:,:,0:H,2:]).clamp(-32, 31)
@@ -4473,8 +4450,8 @@ class TinyLUTNetOpt(nn.Module):
             torch.cuda.empty_cache()
 
             # Layer 2: PointConv
-            xH = self.pointconv(xh * self.clip_params[4], xl, h=True, s=True, l=0).sum(dim=1)
-            xL = self.pointconv(xh, xl * self.clip_params[5], h=False, s=True, l=0).sum(dim=1)
+            xH = self.pw2(xh * self.clip_params[4], xl, h=True, s=True, l=0).sum(dim=1)
+            xL = self.pw2(xh, xl * self.clip_params[5], h=False, s=True, l=0).sum(dim=1)
             
             xh = (XQuantize.apply(xH / 16) + xh).clamp(-32, 31)
             xl = (XQuantize.apply(xL / 16) + xl).clamp(0, 3)
@@ -4551,3 +4528,224 @@ class TinyLUTNetOpt(nn.Module):
             res = res.view(B, C, H*self.upscale, W*self.upscale)
 
         return (res + 128) / 255 if is_trs else res + 128
+    
+
+class Floor_STE(Function):
+    @staticmethod
+    def forward(ctx, x):
+        x = torch.floor(x)
+        return x
+    
+    @staticmethod
+    def backward(ctx, grad_outputs):
+        return grad_outputs, None
+
+class VarDepthWise(torch.nn.Module):
+    def __init__(self, out_ch=16, is_pad=False,round_fn=Floor_STE.apply):
+        super().__init__()
+        self.out_ch = out_ch
+        self.pad = 1 if is_pad else 0
+        self.Round = round_fn
+        # 合并高低分支权重 [2, 9*C, 1, 3, 3]
+        base_kernel = torch.eye(9, dtype=torch.float32).view(1, 9, 1, 3, 3)
+        self.weights = nn.Parameter(base_kernel.repeat(2, out_ch, 1, 1, 1))  # [2,9C,1,3,3]
+        self.register_buffer('mask', (self.weights != 0).float())
+        # 高低都有bias
+        self.bias = nn.Parameter(torch.zeros(2, 9, out_ch))
+
+    def forward(self, x, h):
+        B, C, H, W = x.size()
+        idx = 0 if h else 1
+        
+        # 合并卷积计算
+        weights = self.weights[idx].view(-1, 1, 3, 3)  # [9C,1,3,3]
+        mask = self.mask[idx].view(-1, 1, 3, 3)
+        
+        # 高效卷积实现（保持 clamp 顺序）
+        outputs = F.conv2d(
+            x.repeat_interleave(9, dim=1),  # [B, 9C, H, W]
+            weights * mask,
+            bias=self.bias[idx].view(-1),
+            padding=self.pad,
+            groups=9*C
+        ).view(B, 9, self.out_ch, H-(2 - self.pad * 2), W-(2 - self.pad * 2))  # 保留原有 clamp
+        outputs = (torch.tanh(outputs) * 128).clamp(-128, 127)
+        outputs = self.Round(outputs).sum(dim=1)
+        return outputs
+
+
+class VarPointOneChannel(nn.Module):
+    def __init__(self, in_ch=1, out_ch=16, n_feature=16):
+        super().__init__()
+        # 优化1：减少通道数(64->32)和层数
+        self.conv = nn.Sequential(
+            nn.Conv2d(in_ch, n_feature, 1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(n_feature, out_ch, 1),
+            nn.Tanh(),
+        )
+
+    def forward(self, x):
+        # 保留量化逻辑但优化执行顺序
+        return self.conv(x)
+        
+
+class VarPointwise(nn.Module):
+    def __init__(self, upscale=4, in_ch=1, out_ch=16, n_feature=16, inner_shared=1, row_shared=True,round_fn=Floor_STE.apply):
+        super().__init__()
+        self.out_ch = out_ch
+        self.upscale = upscale
+        # 使用ModuleList存储卷积模块
+        self.msb_conv = nn.ModuleList()
+        self.lsb_conv = nn.ModuleList()
+        self.inner_shared = inner_shared
+        self.row_shared = row_shared
+        self.Round = round_fn
+        # upscale ** 2 must be divisible by inner_shared
+        assert (upscale ** 2) % inner_shared == 0
+
+        for _ in range((upscale ** 2) // inner_shared):
+            self.msb_conv.append(VarPointOneChannel(in_ch=in_ch, out_ch=out_ch, n_feature=n_feature))
+            self.lsb_conv.append(VarPointOneChannel(in_ch=in_ch, out_ch=out_ch, n_feature=n_feature))
+
+        
+    def forward(self, x, h, s, l):
+        if s:
+            B, C, H, W = x.shape
+            x = x.view(B*C, 1, H, W)
+            
+            output = None
+            num_modules = self.upscale ** 2
+            for i in range(num_modules):
+                idx = i // self.inner_shared if self.row_shared else i % self.inner_shared
+                # 逐个处理每个卷积模块并累加结果
+                out_i = self.msb_conv[idx](x) if h else self.lsb_conv[idx](x)
+                out_i = out_i.view(B, C, self.out_ch, H, W) * 128
+                if output is None:
+                    output = out_i
+                else:
+                    output += out_i
+                # 及时释放中间变量（可选）
+                del out_i
+                # torch.cuda.empty_cache()
+            
+            # 计算均值并确保结果在正确设备上
+            output = self.Round(output / num_modules).clamp(-128, 127)
+            return output.sum(dim=1)
+        else:
+            # 处理单一路径
+            B, C, H, W = x.shape
+            x = x.view(B*C, 1, H, W)
+            idx = l // self.inner_shared if self.row_shared else l % self.inner_shared
+            out = self.msb_conv[idx](x) if h else self.lsb_conv[idx](x)
+            return out.view(B, C, self.out_ch, H, W) * 128
+
+
+class VarLUTResBlock(nn.Module):
+    def __init__(self, lsb_width=2,upscale=4,in_ch=1,out_ch=3,n_feature=16,dw=None,pw1=None,pw2=None,inner_shared=1,row_shared=False,rot=0,round_fn=Floor_STE.apply):
+        super().__init__()
+        if pw1 is None:
+            self.pw1 = VarPointwise(upscale=upscale, out_ch=n_feature,n_feature=n_feature, inner_shared=inner_shared, row_shared=row_shared, round_fn=round_fn)
+        else:
+            self.pw1 = pw1
+        if dw is None:
+            self.dw = VarDepthWise(round_fn=round_fn, out_ch=n_feature)
+        else:
+            self.dw = dw
+        if pw2 is None:
+            self.pw2 = VarPointwise(upscale=upscale, out_ch=out_ch,n_feature=n_feature, inner_shared=inner_shared, row_shared=row_shared, round_fn=round_fn)
+        else:
+            self.pw2 = pw2
+        self.upscale = upscale
+        self.lsb_width = lsb_width
+        self.msb_width = 8 - lsb_width
+        self.interval = 2 ** self.lsb_width
+        self.out_ch = out_ch
+        self.n_feature = n_feature
+        self.Round = round_fn
+        self.pad = (2, 0, 2, 0)
+        self.rot = rot
+        self.msb_max = 2 ** self.msb_width - 1
+        self.lsb_max = 2 ** self.lsb_width - 1
+        self.msb_min = -2 ** self.msb_width
+        self.lsb_min = -2 ** self.lsb_width
+        self.clip1 = nn.Parameter(torch.full((2, in_ch, 1, 1), 0.8))
+        self.clip2 = nn.Parameter(torch.full((2, n_feature, 1, 1), 0.8))
+        self.clip3 = nn.Parameter(torch.full((2, in_ch * upscale * upscale, 1, 1), 0.8))
+
+    def seg(self, x):
+        xl = torch.remainder(x, self.interval)
+        xh = torch.floor(x / self.interval)
+        return xl, xh
+    
+    def meg(self, xl, xh):
+        return (xh * self.interval + xl).clamp(-128, 127)
+
+    def forward(self, x):
+        # 1. Rot & Pad
+        x = F.pad(torch.rot90(x, k=self.rot, dims=(2,3)), pad=self.pad, mode='replicate')
+        B,C,H,W = x.shape
+        # 2. Segment
+        xl, xh = self.seg(x)
+        xll = xl
+        xhh = xh
+        # 3. Pointwise
+        xH = self.pw1(xh * self.clip1[0], h=True ,s=True,l=0)
+        xL = self.pw1(xl * self.clip1[1], h=False,s=True,l=0)
+        xh = (self.Round(xH / 16)).clamp(self.msb_min, self.msb_max)
+        xl = (self.Round(xL / 16)).clamp(self.lsb_min, self.lsb_max)
+        del xH, xL
+        torch.cuda.empty_cache()
+        # 4. Depthwise
+        xH = self.dw(xh, h=True)
+        xL = self.dw(xl, h=False)
+        xh = (self.Round(xH / 9) + xh[:,:,2:,2:]).clamp(self.msb_min, self.msb_max)
+        xl = (self.Round(xL / 9) + xl[:,:,2:,2:]).clamp(self.lsb_min, self.lsb_max)
+        del xH, xL
+        torch.cuda.empty_cache()
+        # 5. Pointwise
+        xH = self.pw2(xh * self.clip2[0], h=True ,s=True,l=0)
+        xL = self.pw2(xl * self.clip2[1], h=False,s=True,l=0)
+        xh = (self.Round(xH / 16)).clamp(self.msb_min, self.msb_max)
+        xl = (self.Round(xL / 16)).clamp(self.lsb_min, self.lsb_max)
+        del xH, xL
+        torch.cuda.empty_cache()
+        # 6. Res
+        if C == self.out_ch:
+            xh = self.Round(xh + xhh[:,:,2:,2:] * self.clip3[0]).clamp(self.msb_min, self.msb_max)
+            xl = self.Round(xl + xll[:,:,2:,2:] * self.clip3[1]).clamp(self.lsb_min, self.lsb_max)
+        else:
+            xh = self.Round(xh * self.clip3[0]).clamp(self.msb_min, self.msb_max)
+            xl = self.Round(xl * self.clip3[1]).clamp(self.lsb_min, self.lsb_max)
+        # 7. Merge
+        x = self.meg(xl, xh).clamp(-128, 127)
+        # 8. Rot
+        x = torch.rot90(x, k=-self.rot, dims=(2,3))
+        return x
+
+
+
+class VarLUTNet(nn.Module):
+    def __init__(self, upscale=4,n_feature=16,in_ch=3,round_fn=Floor_STE.apply):
+        super().__init__()
+        self.Round = round_fn
+        self.upscale = upscale
+        self.shared_pw1 = VarPointwise(upscale=1,out_ch=3,n_feature=n_feature,round_fn=round_fn)
+        self.shared_pw2 = VarPointwise(upscale=upscale,out_ch=in_ch * upscale * upscale,n_feature=n_feature,round_fn=round_fn)
+        self.blk1 = VarLUTResBlock(upscale=1, out_ch= 3,n_feature=n_feature,pw2=self.shared_pw1,rot=1)
+        self.blk2 = VarLUTResBlock(upscale=1, out_ch= 3,n_feature=n_feature,pw2=self.shared_pw1,rot=2)
+        self.blk3 = VarLUTResBlock(upscale=1, out_ch= 3,n_feature=n_feature,pw2=self.shared_pw1,rot=3)
+        self.blk4 = VarLUTResBlock(upscale=1, out_ch= 3,n_feature=n_feature,pw2=self.shared_pw1,rot=4)
+        self.fina = VarLUTResBlock(upscale=4, in_ch = 3,out_ch=upscale * upscale,n_feature=n_feature,pw2=self.shared_pw2,rot=0)
+
+    def forward(self, x):
+        x1 = self.blk1(x)
+        x2 = self.blk2(x)
+        x3 = self.blk3(x)
+        x4 = self.blk4(x)
+        x = self.Round((x1 + x2 + x3 + x4).div(4))
+        x = self.fina(x)
+        x = nn.PixelShuffle(self.upscale)(x)
+        return x
+        
+        

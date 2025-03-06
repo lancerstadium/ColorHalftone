@@ -106,11 +106,11 @@ void VarLUT_test() {
     };
 
     char img_path[64];
-    float scale = 4.60f;
+    float scale = 3.4f;
     int W, H, C;
     uint8_t *X = (uint8_t *)stbi_load("../../test/org/0149x4.png", &W, &H, &C, 0);
-    int H2 = (int)(H * scale + 0.5f);
-    int W2 = (int)(W * scale + 0.5f);
+    int H2 = H * (int)scale;
+    int W2 = W * (int)scale;
     uint8_t *Y = (uint8_t *)calloc(H2 * W2 * C, sizeof(uint8_t));
 
     TinyLUT mdl;
@@ -201,8 +201,8 @@ int main() {
     // MuLUT_test();
     // Quant_s16_test();
     // Segment_test();
-    // TinyLUT_test();
-    VarLUT_test();
+    TinyLUT_test();
+    // VarLUT_test();
     // Bicubic_test();
     return 0;
 }

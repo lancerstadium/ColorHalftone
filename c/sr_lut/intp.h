@@ -228,7 +228,7 @@ void Intp_fuse_var_s8_hwc(
     int offset_LSB,
     int scale_MSB,
     int offset_MSB,
-    float upscale,
+    int upscale,
     int ksz,
     int dense,
     int clamp8,
