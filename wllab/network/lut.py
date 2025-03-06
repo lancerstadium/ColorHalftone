@@ -4570,7 +4570,7 @@ class VarDepthWise(torch.nn.Module):
             groups=9*C
         ).view(B, 9, self.out_ch, H-(2 - self.pad * 2), W-(2 - self.pad * 2))  # 保留原有 clamp
         outputs = (torch.tanh(outputs) * 128).clamp(-128, 127)
-        outputs = self.Round(outputs).sum(dim=1)
+        outputs = self.Round(self.Round(outputs).sum(dim=1) / 9 + x[:,:,2:,2:])
         return outputs
 
 
@@ -4631,7 +4631,7 @@ class VarPointwise(nn.Module):
             
             # 计算均值并确保结果在正确设备上
             output = self.Round(output / num_modules).clamp(-128, 127)
-            return output.sum(dim=1)
+            return self.Round(output.sum(dim=1) / self.out_ch)
         else:
             # 处理单一路径
             B, C, H, W = x.shape
@@ -4688,26 +4688,14 @@ class VarLUTResBlock(nn.Module):
         # 2. Segment
         xl, xh = self.seg(x)
         # 3. Pointwise
-        xH = self.pw1(xh * self.clip1[0], h=True ,s=True,l=0)
-        xL = self.pw1(xl * self.clip1[1], h=False,s=True,l=0)
-        xh = (self.Round(xH / 16)).clamp(self.msb_min, self.msb_max)
-        xl = (self.Round(xL / 16)).clamp(self.lsb_min, self.lsb_max)
-        del xH, xL
-        torch.cuda.empty_cache()
+        xh = self.pw1(xh * self.clip1[0], h=True ,s=True,l=0).clamp(self.msb_min, self.msb_max)
+        xl = self.pw1(xl * self.clip1[1], h=False,s=True,l=0).clamp(self.lsb_min, self.lsb_max)
         # 4. Depthwise
-        xH = self.dw(xh, h=True)
-        xL = self.dw(xl, h=False)
-        xh = (self.Round(xH / 9) + xh[:,:,2:,2:]).clamp(self.msb_min, self.msb_max)
-        xl = (self.Round(xL / 9) + xl[:,:,2:,2:]).clamp(self.lsb_min, self.lsb_max)
-        del xH, xL
-        torch.cuda.empty_cache()
+        xh = self.dw(xh, h=True).clamp(self.msb_min, self.msb_max)
+        xl = self.dw(xl, h=False).clamp(self.lsb_min, self.lsb_max)
         # 5. Pointwise
-        xH = self.pw2(xh * self.clip2[0], h=True ,s=True,l=0)
-        xL = self.pw2(xl * self.clip2[1], h=False,s=True,l=0)
-        xh = (self.Round(xH / 16)).clamp(self.msb_min, self.msb_max)
-        xl = (self.Round(xL / 16)).clamp(self.lsb_min, self.lsb_max)
-        del xH, xL
-        torch.cuda.empty_cache()
+        xh = self.pw2(xh * self.clip2[0], h=True ,s=True,l=0).clamp(self.msb_min, self.msb_max)
+        xl = self.pw2(xl * self.clip2[1], h=False,s=True,l=0).clamp(self.lsb_min, self.lsb_max)
         # 6. Res & Meg
         x = (self.meg(xl, xh) + x_org.repeat(1, self.upscale * self.upscale, 1, 1)).clamp(-128, 127)
         # # 8. Rot
