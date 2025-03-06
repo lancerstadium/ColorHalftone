@@ -4572,7 +4572,7 @@ class VarDepthWise(torch.nn.Module):
             groups=9*C
         ).view(B, 9, self.out_ch, H-(2 - self.pad * 2), W-(2 - self.pad * 2))  # 保留原有 clamp
         outputs = self.Round(torch.tanh(outputs) * mul_val).clamp(-128, 127)
-        outputs = self.Round(outputs.sum(dim=1) / 9 + x[:,:,2:,2:])
+        outputs = self.Round(outputs.mean(dim=1) + x[:,:,2:,2:])
         return outputs
 
 
@@ -4635,7 +4635,7 @@ class VarPointwise(nn.Module):
             
             # 计算均值并确保结果在正确设备上
             output = self.Round(output / num_modules).clamp(-128, 127)
-            return self.Round(output.sum(dim=1) / self.out_ch)
+            return self.Round(output.mean(dim=1))
         else:
             # 处理单一路径
             B, C, H, W = x.shape
@@ -4668,7 +4668,6 @@ class VarLUTResBlock(nn.Module):
         self.n_feature = n_feature
         self.Round = round_fn
         self.pad = (2, 0, 2, 0)
-        self.rot = rot
         self.msb_max = 2 ** self.msb_width - 1
         self.lsb_max = 2 ** self.lsb_width - 1
         self.msb_min = -2 ** self.msb_width
@@ -4686,7 +4685,6 @@ class VarLUTResBlock(nn.Module):
 
     def forward(self, x):
         # 1. Rot & Pad
-        # x = torch.rot90(x, k=self.rot, dims=(2,3))
         x_org = x
         x = F.pad(x, pad=self.pad, mode='replicate')
         # 2. Segment
@@ -4702,8 +4700,6 @@ class VarLUTResBlock(nn.Module):
         xl = self.pw2(xl * self.clip2[1], h=False,s=True,l=0).clamp(self.lsb_min, self.lsb_max)
         # 6. Res & Meg
         x = (self.meg(xl, xh) + x_org.repeat(1, self.upscale * self.upscale, 1, 1)).clamp(-128, 127)
-        # # 8. Rot
-        # x = torch.rot90(x, k=-self.rot, dims=(2,3))
         return x
 
 
@@ -4715,11 +4711,11 @@ class VarLUTNet(nn.Module):
         self.upscale = upscale
         self.shared_pw1 = VarPointwise(upscale=upscale,out_ch=3,n_feature=n_feature,round_fn=round_fn)
         self.shared_pw2 = VarPointwise(upscale=upscale,out_ch=in_ch * upscale * upscale,n_feature=n_feature,round_fn=round_fn)
-        self.blk1 = VarLUTResBlock(upscale=1, out_ch= 3,n_feature=n_feature,pw2=self.shared_pw1,rot=1)
-        self.blk2 = VarLUTResBlock(upscale=1, out_ch= 3,n_feature=n_feature,pw2=self.shared_pw1,rot=2)
-        self.blk3 = VarLUTResBlock(upscale=1, out_ch= 3,n_feature=n_feature,pw2=self.shared_pw1,rot=3)
-        self.blk4 = VarLUTResBlock(upscale=1, out_ch= 3,n_feature=n_feature,pw2=self.shared_pw1,rot=4)
-        self.fina = VarLUTResBlock(upscale=4, in_ch = 3,out_ch=upscale * upscale,n_feature=n_feature,pw2=self.shared_pw2,rot=0)
+        self.blk1 = VarLUTResBlock(upscale=1, out_ch= 3,n_feature=n_feature,pw2=self.shared_pw1)
+        self.blk2 = VarLUTResBlock(upscale=1, out_ch= 3,n_feature=n_feature,pw2=self.shared_pw1)
+        self.blk3 = VarLUTResBlock(upscale=1, out_ch= 3,n_feature=n_feature,pw2=self.shared_pw1)
+        self.blk4 = VarLUTResBlock(upscale=1, out_ch= 3,n_feature=n_feature,pw2=self.shared_pw1)
+        self.fina = VarLUTResBlock(upscale=4, in_ch = 3,out_ch=upscale * upscale,n_feature=n_feature,pw2=self.shared_pw2)
 
     def forward(self, x):
         x = x * 255
@@ -4728,7 +4724,6 @@ class VarLUTNet(nn.Module):
         x2 = self.blk2(x1)
         x3 = self.blk3(x2)
         x4 = self.blk4(x3)
-        # x = self.Round((x1 + x2 + x3 + x4).div(4))
         x = self.fina(x4)
         x = nn.PixelShuffle(self.upscale)(x)
         x = (x + 128).clamp(0, 255)
