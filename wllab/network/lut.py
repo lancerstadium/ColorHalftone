@@ -4671,7 +4671,6 @@ class VarLUTResBlock(nn.Module):
         self.lsb_min = -2 ** self.lsb_width
         self.clip1 = nn.Parameter(torch.full((2, in_ch, 1, 1), 0.8))
         self.clip2 = nn.Parameter(torch.full((2, n_feature, 1, 1), 0.8))
-        self.clip3 = nn.Parameter(torch.full((2, in_ch * upscale * upscale, 1, 1), 0.8))
 
     def seg(self, x):
         xl = torch.remainder(x, self.interval)
@@ -4684,12 +4683,10 @@ class VarLUTResBlock(nn.Module):
     def forward(self, x):
         # 1. Rot & Pad
         # x = torch.rot90(x, k=self.rot, dims=(2,3))
+        x_org = x
         x = F.pad(x, pad=self.pad, mode='replicate')
-        B,C,H,W = x.shape
         # 2. Segment
         xl, xh = self.seg(x)
-        xll = xl
-        xhh = xh
         # 3. Pointwise
         xH = self.pw1(xh * self.clip1[0], h=True ,s=True,l=0)
         xL = self.pw1(xl * self.clip1[1], h=False,s=True,l=0)
@@ -4712,14 +4709,10 @@ class VarLUTResBlock(nn.Module):
         del xH, xL
         torch.cuda.empty_cache()
         # 6. Res
-        if self.upscale == 1:
-            xh = self.Round(xh + xhh[:,:,2:,2:] * self.clip3[0]).clamp(self.msb_min, self.msb_max)
-            xl = self.Round(xl + xll[:,:,2:,2:] * self.clip3[1]).clamp(self.lsb_min, self.lsb_max)
-        else:
-            xh = self.Round(xh * self.clip3[0]).clamp(self.msb_min, self.msb_max)
-            xl = self.Round(xl * self.clip3[1]).clamp(self.lsb_min, self.lsb_max)
+        xh = self.Round(xh * self.clip3[0]).clamp(self.msb_min, self.msb_max)
+        xl = self.Round(xl * self.clip3[1]).clamp(self.lsb_min, self.lsb_max)
         # 7. Merge
-        x = self.meg(xl, xh).clamp(-128, 127)
+        x = self.meg(xl, xh).clamp(-128, 127) + x_org
         # # 8. Rot
         # x = torch.rot90(x, k=-self.rot, dims=(2,3))
         return x
