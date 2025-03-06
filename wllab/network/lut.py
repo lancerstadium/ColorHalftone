@@ -4742,11 +4742,11 @@ class VarLUTNet(nn.Module):
         x = x * 255
         x = (x - 128).clamp(-128, 127)
         x1 = self.blk1(x)
-        x2 = self.blk2(x)
-        x3 = self.blk3(x)
-        x4 = self.blk4(x)
-        x = self.Round((x1 + x2 + x3 + x4).div(4))
-        x = self.fina(x)
+        x2 = self.blk2(x1)
+        x3 = self.blk3(x2)
+        x4 = self.blk4(x3)
+        # x = self.Round((x1 + x2 + x3 + x4).div(4))
+        x = self.fina(x4)
         x = nn.PixelShuffle(self.upscale)(x)
         x = (x + 128).clamp(0, 255)
         x = x / 255
