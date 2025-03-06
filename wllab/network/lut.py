@@ -4571,7 +4571,7 @@ class VarDepthWise(torch.nn.Module):
             padding=self.pad,
             groups=9*C
         ).view(B, 9, self.out_ch, H-(2 - self.pad * 2), W-(2 - self.pad * 2))  # 保留原有 clamp
-        outputs = torch.tanh(outputs) * mul_val
+        outputs = self.Round(torch.tanh(outputs) * mul_val).clamp(-128, 127)
         outputs = self.Round(outputs.sum(dim=1) / 9 + x[:,:,2:,2:])
         return outputs
 
@@ -4624,7 +4624,7 @@ class VarPointwise(nn.Module):
                 idx = i // self.inner_shared if self.row_shared else i % self.inner_shared
                 # 逐个处理每个卷积模块并累加结果
                 out_i = self.msb_conv[idx](x) if h else self.lsb_conv[idx](x)
-                out_i = out_i.view(B, C, self.out_ch, H, W) * mul_val
+                out_i = self.Round(out_i.view(B, C, self.out_ch, H, W) * mul_val).clamp(-128, 127)
                 if output is None:
                     output = out_i
                 else:
