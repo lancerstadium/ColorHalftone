@@ -4710,7 +4710,7 @@ class VarLUTNet(nn.Module):
         self.Round = round_fn
         self.upscale = upscale
         self.shared_pw1 = VarPointwise(upscale=upscale,out_ch=3,n_feature=n_feature,round_fn=round_fn)
-        self.shared_pw2 = VarPointwise(upscale=upscale,out_ch=in_ch * upscale * upscale,n_feature=n_feature,round_fn=round_fn)
+        self.shared_pw2 = VarPointwise(upscale=1,out_ch=in_ch * upscale * upscale,n_feature=n_feature * 4,round_fn=round_fn)
         self.blk1 = VarLUTResBlock(upscale=1, out_ch= 3,n_feature=n_feature,pw2=self.shared_pw1)
         self.blk2 = VarLUTResBlock(upscale=1, out_ch= 3,n_feature=n_feature,pw2=self.shared_pw1)
         self.blk3 = VarLUTResBlock(upscale=1, out_ch= 3,n_feature=n_feature,pw2=self.shared_pw1)
