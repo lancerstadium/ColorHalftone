@@ -4683,7 +4683,8 @@ class VarLUTResBlock(nn.Module):
 
     def forward(self, x):
         # 1. Rot & Pad
-        x = F.pad(torch.rot90(x, k=self.rot, dims=(2,3)), pad=self.pad, mode='replicate')
+        # x = torch.rot90(x, k=self.rot, dims=(2,3))
+        x = F.pad(x, pad=self.pad, mode='replicate')
         B,C,H,W = x.shape
         # 2. Segment
         xl, xh = self.seg(x)
@@ -4719,8 +4720,8 @@ class VarLUTResBlock(nn.Module):
             xl = self.Round(xl * self.clip3[1]).clamp(self.lsb_min, self.lsb_max)
         # 7. Merge
         x = self.meg(xl, xh).clamp(-128, 127)
-        # 8. Rot
-        x = torch.rot90(x, k=-self.rot, dims=(2,3))
+        # # 8. Rot
+        # x = torch.rot90(x, k=-self.rot, dims=(2,3))
         return x
 
 
