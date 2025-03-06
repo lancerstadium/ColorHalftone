@@ -4708,10 +4708,7 @@ class VarLUTResBlock(nn.Module):
         xl = (self.Round(xL / 16)).clamp(self.lsb_min, self.lsb_max)
         del xH, xL
         torch.cuda.empty_cache()
-        # 6. Res
-        xh = self.Round(xh * self.clip3[0]).clamp(self.msb_min, self.msb_max)
-        xl = self.Round(xl * self.clip3[1]).clamp(self.lsb_min, self.lsb_max)
-        # 7. Merge
+        # 6. Res & Meg
         x = self.meg(xl, xh).clamp(-128, 127) + x_org
         # # 8. Rot
         # x = torch.rot90(x, k=-self.rot, dims=(2,3))
