@@ -4572,7 +4572,7 @@ class VarDepthWise(torch.nn.Module):
             groups=9*C
         ).view(B, 9, self.out_ch, H-(2 - self.pad * 2), W-(2 - self.pad * 2))  # 保留原有 clamp
         outputs = self.Round(torch.tanh(outputs) * mul_val).clamp(-128, 127)
-        outputs = self.Round(outputs.mean(dim=1) + x[:,:,2:,2:])
+        outputs = self.Round(outputs.mean(dim=1) + x)
         return outputs
 
 
