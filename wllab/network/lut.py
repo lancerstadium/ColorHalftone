@@ -4709,7 +4709,7 @@ class VarLUTResBlock(nn.Module):
         del xH, xL
         torch.cuda.empty_cache()
         # 6. Res & Meg
-        x = (self.meg(xl, xh) + x_org).clamp(-128, 127)
+        x = (self.meg(xl, xh) + x_org.repeat(1, self.upscale * self.upscale, 1, 1)).clamp(-128, 127)
         # # 8. Rot
         # x = torch.rot90(x, k=-self.rot, dims=(2,3))
         return x
