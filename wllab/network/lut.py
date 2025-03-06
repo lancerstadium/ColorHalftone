@@ -4714,26 +4714,28 @@ class VarLUTNet(nn.Module):
         self.Round = round_fn
         self.upscale = upscale
         self.shared_pw = VarPointwise(upscale=upscale,out_ch=3 * upscale * upscale,n_feature=n_feature,round_fn=round_fn)
+        self.head = VarLUTResBlock(upscale=1, in_ch = 3 * upscale * upscale,out_ch= 3 * upscale * upscale,n_feature=n_feature)
         self.blk1 = VarLUTResBlock(upscale=4, out_ch= 3 * upscale * upscale,n_feature=n_feature,pw2=self.shared_pw)
         self.blk2 = VarLUTResBlock(upscale=4, out_ch= 3 * upscale * upscale,n_feature=n_feature,pw2=self.shared_pw)
         self.blk3 = VarLUTResBlock(upscale=4, out_ch= 3 * upscale * upscale,n_feature=n_feature,pw2=self.shared_pw)
         self.blk4 = VarLUTResBlock(upscale=4, out_ch= 3 * upscale * upscale,n_feature=n_feature,pw2=self.shared_pw)
-        self.fina = VarLUTResBlock(upscale=1, in_ch = 3 * upscale * upscale,out_ch= 3 * upscale * upscale,n_feature=n_feature)
+        
 
     def forward(self, x):
         with torch.amp.autocast('cuda'):
             x = x * 255
             x = (x - 128).clamp(-128, 127)
-            x1 = self.blk1(x, rot=0)
+            x = self.head(x)
             torch.cuda.empty_cache()
-            x2 = self.blk2(x, rot=1)
+            x1 = self.blk1( x, rot=0)
             torch.cuda.empty_cache()
-            x3 = self.blk3(x, rot=2)
+            x2 = self.blk2(x1, rot=1)
             torch.cuda.empty_cache()
-            x4 = self.blk4(x, rot=3)
+            x3 = self.blk3(x2, rot=2)
+            torch.cuda.empty_cache()
+            x4 = self.blk4(x3, rot=3)
             torch.cuda.empty_cache()
             x = self.Round((x1 + x2 + x3 + x4) / 4).clamp(-128, 127)
-            x = self.fina(x)
             x = nn.PixelShuffle(self.upscale)(x)
             x = (x + 128).clamp(0, 255)
             x = x / 255
