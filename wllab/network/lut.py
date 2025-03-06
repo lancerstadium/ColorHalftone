@@ -4682,8 +4682,9 @@ class VarLUTResBlock(nn.Module):
     def meg(self, xl, xh):
         return (xh * self.interval + xl).clamp(-128, 127)
 
-    def forward(self, x):
+    def forward(self, x, rot=0):
         # 1. Rot & Pad
+        x = torch.rot90(x, k=rot, dims=(-2, -1))
         x_org = x
         # 2. Segment
         xl, xh = self.seg(x)
@@ -4698,6 +4699,8 @@ class VarLUTResBlock(nn.Module):
         xl = self.pw2(xl * self.clip2[1], h=False,s=True,l=0).clamp(self.lsb_min, self.lsb_max)
         # 6. Res & Meg
         x = (self.meg(xl, xh) + x_org.repeat(1, self.upscale * self.upscale, 1, 1)).clamp(-128, 127)
+        # 7. Rot Back
+        x = torch.rot90(x, k=-rot, dims=(-2, -1))
         return x
 
 
@@ -4709,19 +4712,19 @@ class VarLUTNet(nn.Module):
         self.upscale = upscale
         self.shared_pw1 = VarPointwise(upscale=upscale,out_ch=3,n_feature=n_feature,round_fn=round_fn)
         self.shared_pw2 = VarPointwise(upscale=1,out_ch=in_ch * upscale * upscale,n_feature=n_feature * 4,round_fn=round_fn)
-        self.blk1 = VarLUTResBlock(upscale=2, out_ch= 3,n_feature=n_feature,pw2=self.shared_pw1)
-        self.blk2 = VarLUTResBlock(upscale=2, out_ch= 3,n_feature=n_feature,pw2=self.shared_pw1)
-        self.blk3 = VarLUTResBlock(upscale=2, out_ch= 3,n_feature=n_feature,pw2=self.shared_pw1)
-        self.blk4 = VarLUTResBlock(upscale=2, out_ch= 3,n_feature=n_feature,pw2=self.shared_pw1)
-        self.fina = VarLUTResBlock(upscale=2, in_ch = 3,out_ch=upscale * upscale,n_feature=n_feature,pw2=self.shared_pw2)
+        self.blk1 = VarLUTResBlock(upscale=1, out_ch= 3,n_feature=n_feature,pw2=self.shared_pw1)
+        self.blk2 = VarLUTResBlock(upscale=1, out_ch= 3,n_feature=n_feature,pw2=self.shared_pw1)
+        self.blk3 = VarLUTResBlock(upscale=1, out_ch= 3,n_feature=n_feature,pw2=self.shared_pw1)
+        self.blk4 = VarLUTResBlock(upscale=1, out_ch= 3,n_feature=n_feature,pw2=self.shared_pw1)
+        self.fina = VarLUTResBlock(upscale=4, in_ch = 3,out_ch=upscale * upscale,n_feature=n_feature,pw2=self.shared_pw2)
 
     def forward(self, x):
         x = x * 255
         x = (x - 128).clamp(-128, 127)
-        x1 = self.blk1(x)
-        x2 = self.blk2(x1)
-        x3 = self.blk3(x2)
-        x4 = self.blk4(x3)
+        x1 = self.blk1( x, rot=0)
+        x2 = self.blk2(x1, rot=1)
+        x3 = self.blk3(x2, rot=2)
+        x4 = self.blk4(x3, rot=3)
         x = self.Round((x1 + x2 + x3 + x4) / 4).clamp(-128, 127)
         x = self.fina(x)
         x = nn.PixelShuffle(self.upscale)(x)
