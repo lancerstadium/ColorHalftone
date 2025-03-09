@@ -124,7 +124,7 @@ class PairedDataset(Dataset):
 
 
 class PatchDataset(Dataset):
-    def __init__(self, image_dir, transform=None, max_images=800, patch_size=32, threshold=0.7):
+    def __init__(self, image_dir, transform=None, max_images=800, patch_size=32, threshold=0.5):
         """
         image_list: 可以是图像路径列表或已加载的numpy数组列表
         transform: 数据增强操作
