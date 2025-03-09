@@ -339,7 +339,7 @@ def finetune_lut_sr(model,
 
 
 # ================= 训练函数（与之前相同接口） =================
-def train_cf(model, dataloader, num_epochs=50):
+def train_cf(model, dataloader, num_epochs=50,save_path=None):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
     
@@ -378,4 +378,7 @@ def train_cf(model, dataloader, num_epochs=50):
                 })
                 pbar.update(1)
         print(f"Epoch [{epoch + 1}/{num_epochs}] completed. Average Loss: {running_loss / len(dataloader):.5f}, Accuracy: {correct / total:.5f}")
+    if save_path:
+        torch.save(model.state_dict(), save_path)
+        print(f"Model saved to {save_path}!")
     return model

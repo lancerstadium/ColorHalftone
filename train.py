@@ -100,7 +100,8 @@ def TRAIN_CF():
     train_cf(
         model=model,
         dataloader=dataloader,
-        num_epochs=40
+        num_epochs=40,
+        save_path="./checkpoints/classifier.pth"
     )
 
 
