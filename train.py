@@ -95,12 +95,12 @@ def TRAIN_CF():
         image_dir="../dataset/DIV2K/LR/X4",
         patch_size=patch_size
     )
-    dataloader = DataLoader(dateset, batch_size=16, shuffle=True, num_workers=4)
+    dataloader = DataLoader(dateset, batch_size=32, shuffle=True, num_workers=4)
     model = PatchClassifier(in_channels=3, patch_size=patch_size)
     train_cf(
         model=model,
         dataloader=dataloader,
-        num_epochs=200
+        num_epochs=40
     )
 
 
