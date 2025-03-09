@@ -4,6 +4,7 @@ import os
 import torch
 import random
 import numpy as np
+import torch.nn.functional as F
 
 class SingleDataset(Dataset):
     '''
@@ -118,3 +119,111 @@ class PairedDataset(Dataset):
         top = random.randint(0, height - crop_height)
         left = random.randint(0, width - crop_width)
         return top, left, crop_height, crop_width
+    
+
+
+
+class PatchDataset(Dataset):
+    def __init__(self, image_dir, transform=None, max_images=800, patch_size=32, threshold=0.7):
+        """
+        image_list: 可以是图像路径列表或已加载的numpy数组列表
+        transform: 数据增强操作
+        max_images: 最大处理的图像数量
+        """
+        # 存储原始图像引用或路径
+        self.image_dir = image_dir
+        self.image_list = os.listdir(image_dir)[:max_images]  # 控制最大图像数量
+        self.patch_size = patch_size
+        self.threshold = threshold
+        self.transform = transform
+        
+        # 预计算所有可能的patch位置 (image_idx, y, x)
+        self.patch_positions = []
+        for img_idx, img_ref in enumerate(self.image_list):
+            # 动态获取图像尺寸
+            if isinstance(img_ref, str):  # 如果是路径
+                with Image.open(img_ref) as img:
+                    h, w = img.size[1], img.size[0]
+            else:  # 如果是numpy数组
+                h, w = img_ref.shape[:2]
+            
+            # 生成网格坐标 (50%重叠)
+            y_coords = range(0, h - self.patch_size + 1, self.patch_size // 2)
+            x_coords = range(0, w - self.patch_size + 1, self.patch_size // 2)
+            self.patch_positions.extend([(img_idx, y, x) for y in y_coords for x in x_coords])
+
+        # 缓存系统
+        self.current_img_idx = None
+        self.cached_img = None
+        self.cached_gradient = None
+
+    def __len__(self):
+        return len(self.patch_positions)
+
+    def __getitem__(self, idx):
+        img_idx, y, x = self.patch_positions[idx]
+        
+        # 按需加载图像 -------------------------------------------------
+        if img_idx != self.current_img_idx:
+            img_ref = self.image_list[img_idx]
+            
+            if isinstance(img_ref, str):  # 从文件加载
+                with Image.open(img_ref) as img:
+                    img_array = np.array(img.convert('RGB'))  # 强制转RGB
+            else:  # 直接使用numpy数组
+                img_array = img_ref if img_ref.ndim ==3 else img_ref[..., np.newaxis]
+            
+            # 转换为Tensor并缓存
+            self.cached_img = torch.from_numpy(img_array).permute(2,0,1).float() / 255.0
+            
+            # 计算并缓存梯度图
+            self.cached_gradient = self._compute_gradient(self.cached_img)
+            self.current_img_idx = img_idx
+
+        # 动态提取patch ------------------------------------------------
+        patch = self.cached_img[:,
+                  y:y+self.patch_size,
+                  x:x+self.patch_size]
+        
+        # 提取对应的梯度区域
+        grad_patch = self.cached_gradient[
+                     y:y+self.patch_size,
+                     x:x+self.patch_size]
+        
+        # 计算特征 -----------------------------------------------------
+        grad_mean = grad_patch.mean()
+        patch_var = torch.var(patch, dim=(1,2), unbiased=False).mean() + 1e-6
+        score = 0.6*grad_mean + 0.4*patch_var
+        label = 1 if score > self.threshold else 0
+
+        # 数据增强 -----------------------------------------------------
+        if self.transform:
+            patch = self.transform(patch)
+
+        return patch, label
+
+    def _compute_gradient(self, img_tensor):
+        """PyTorch实现的Sobel梯度计算"""
+        if img_tensor.shape[0] > 1:  # 多通道转灰度
+            gray = img_tensor.mean(dim=0, keepdim=True)
+        else:
+            gray = img_tensor
+        
+        # 定义Sobel核
+        sobel_x = torch.tensor([[[[1, 0, -1], 
+                                [2, 0, -2], 
+                                [1, 0, -1]]]], 
+                             dtype=torch.float32, device=gray.device)
+        
+        sobel_y = torch.tensor([[[[1, 2, 1], 
+                                [0, 0, 0], 
+                                [-1, -2, -1]]]],
+                             dtype=torch.float32, device=gray.device)
+        
+        # 计算梯度
+        grad_x = torch.nn.functional.conv2d(gray.unsqueeze(0), sobel_x, padding=1)
+        grad_y = torch.nn.functional.conv2d(gray.unsqueeze(0), sobel_y, padding=1)
+        
+        return torch.sqrt(grad_x.pow(2) + grad_y.pow(2)).squeeze()
+    
+

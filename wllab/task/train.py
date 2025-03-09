@@ -4,6 +4,7 @@ import math
 
 import torch
 import torch.optim as optim
+import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 
@@ -330,3 +331,45 @@ def finetune_lut_sr(model,
                     print(f"Finetuned LUT saved: {ft_lut_path}")
     
     print(f"Finetuning completed. Average Loss: {epoch_loss:.4f}")
+
+
+
+
+
+
+
+# ================= 训练函数（与之前相同接口） =================
+def train_cf(model, dataloader, num_epochs=50):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = model.to(device)
+    
+    # 损失函数与优化器
+    criterion = nn.BCELoss()
+    optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-5)
+    
+    # 训练循环
+    for epoch in range(num_epochs):
+        model.train()
+        running_loss = 0.0
+        correct = 0
+        total = 0
+        
+        for inputs, labels in dataloader:
+            inputs = inputs.to(device)
+            labels = labels.float().to(device).view(-1,1)
+            
+            outputs = model(inputs)
+            loss = criterion(outputs, labels)
+            
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            
+            running_loss += loss.item()
+            predicted = (outputs > 0.5).float()
+            correct += (predicted == labels).sum().item()
+            total += labels.size(0)
+        
+        print(f"Epoch [{epoch+1}/{num_epochs}] Loss: {running_loss/len(dataloader):.4f} Acc: {correct/total:.4f}")
+    
+    return model

@@ -1,11 +1,11 @@
 import torchvision
-from torchvision.transforms import ToTensor, Resize, Normalize, RandomCrop, Grayscale, CenterCrop, Pad
+from torchvision.transforms import ToTensor, Resize, Normalize, RandomCrop, Grayscale, CenterCrop, Pad, RandomHorizontalFlip, RandomVerticalFlip
 from torch.utils.data import DataLoader
-
+from wllab.network.cf import PatchClassifier
 from wllab.network.lut import SRNet, SPF_LUT_net, MuLUT, BaseSRNets, DepthwiseLUT, PointwiseONE, PointwiseLUT, LogicLUTNet, TinyLUTNet, TinyLUTNetOpt, VarLUTNet
 from wllab.network.ht import HalftoneNet
-from wllab.data.data import SingleDataset, PairedDataset
-from wllab.task.train import train_ht, train_sr
+from wllab.data.data import SingleDataset, PairedDataset, PatchDataset
+from wllab.task.train import train_ht, train_sr, train_cf
 
 def TRAIN_HT():
     # 数据预处理
@@ -89,12 +89,27 @@ def TRAIN_SR():
     )
 
 
+def TRAIN_CF():
+    patch_size = 32
+    dateset = PatchDataset(
+        image_dir="../dataset/DIV2K/LR/X4",
+        patch_size=patch_size
+    )
+    dataloader = DataLoader(dateset, batch_size=16, shuffle=True, num_workers=4)
+    model = PatchClassifier(in_channels=3, patch_size=patch_size)
+    train_cf(
+        model=model,
+        dataloader=dataloader,
+        num_epochs=200
+    )
+
 
 # 主函数
 if __name__ == "__main__":
-    TRAIN_SR()
+    TRAIN_CF()
+    # TRAIN_SR()
     # import torch
-    # I = torch.randn(1, 3, 48, 48)
-    # model = VarLUTNet()
+    # I = torch.randn(1, 3, 32, 32)
+    # model = PatchClassifier(in_channels=3, patch_size=32)
     # O = model(I)
     # print(O.shape)
