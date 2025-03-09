@@ -141,8 +141,9 @@ class PatchDataset(Dataset):
         self.patch_positions = []
         for img_idx, img_ref in enumerate(self.image_list):
             # 动态获取图像尺寸
-            if isinstance(img_ref, str):  # 如果是路径
-                with Image.open(img_ref) as img:
+            img_path = os.path.join(self.image_dir, self.image_list[img_idx])
+            if isinstance(img_path, str):  # 从文件加载
+                with Image.open(img_path) as img:
                     h, w = img.size[1], img.size[0]
             else:  # 如果是numpy数组
                 h, w = img_ref.shape[:2]
