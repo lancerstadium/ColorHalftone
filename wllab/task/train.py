@@ -354,22 +354,27 @@ def train_cf(model, dataloader, num_epochs=50):
         correct = 0
         total = 0
         
-        for inputs, labels in dataloader:
-            inputs = inputs.to(device)
-            labels = labels.float().to(device).view(-1,1)
-            
-            outputs = model(inputs)
-            loss = criterion(outputs, labels)
-            
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            
-            running_loss += loss.item()
-            predicted = (outputs > 0.5).float()
-            correct += (predicted == labels).sum().item()
-            total += labels.size(0)
+        # tqdm 进度条
+        with tqdm.tqdm(total=len(dataloader), desc=f"Epoch {epoch + 1}/{num_epochs}") as pbar:
+            for inputs, labels in dataloader:
+                inputs = inputs.to(device)
+                labels = labels.float().to(device).view(-1,1)
+                
+                outputs = model(inputs)
+                loss = criterion(outputs, labels)
+                
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                
+                running_loss += loss.item()
+                predicted = (outputs > 0.5).float()
+                correct += (predicted == labels).sum().item()
+                total += labels.size(0)
         
-        print(f"Epoch [{epoch+1}/{num_epochs}] Loss: {running_loss/len(dataloader):.4f} Acc: {correct/total:.4f}")
+                pbar.set_postfix({
+                    "loss": f"{running_loss / (pbar.n + 1):.5f}",
+                    "acc": f"{correct / total:.5f}"
+                })
     
     return model
