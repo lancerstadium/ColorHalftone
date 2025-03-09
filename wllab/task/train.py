@@ -376,5 +376,6 @@ def train_cf(model, dataloader, num_epochs=50):
                     "loss": f"{running_loss / (pbar.n + 1):.5f}",
                     "acc": f"{correct / total:.5f}"
                 })
-    
+                pbar.update(1)
+        print(f"Epoch [{epoch + 1}/{num_epochs}] completed. Average Loss: {running_loss / len(dataloader):.5f}, Accuracy: {correct / total:.5f}")
     return model
