@@ -217,6 +217,11 @@ class PatchDataset(Dataset):
             selected_pos = random.sample(pos_samples, min(target_pos, len(pos_samples)))
             selected_neg = random.sample(neg_samples, min(target_neg, len(neg_samples)))
             
+
+            # 添加到patch位置列表
+            if len(selected_pos) == 0 or len(selected_neg) == 0:
+                continue
+
             self.patch_positions.extend(selected_pos + selected_neg)
             self.class_weights.extend([1.0/len(selected_pos)]*len(selected_pos) + 
                                    [1.0/len(selected_neg)]*len(selected_neg))
