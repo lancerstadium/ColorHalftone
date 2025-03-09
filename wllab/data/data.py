@@ -166,15 +166,18 @@ class PatchDataset(Dataset):
         # 按需加载图像 -------------------------------------------------
         if img_idx != self.current_img_idx:
             img_ref = self.image_list[img_idx]
-            
-            if isinstance(img_ref, str):  # 从文件加载
-                with Image.open(img_ref) as img:
+            img_path = os.path.join(self.image_dir, self.image_list[img_idx])
+            if isinstance(img_path, str):  # 从文件加载
+                with Image.open(img_path) as img:
                     img_array = np.array(img.convert('RGB'))  # 强制转RGB
             else:  # 直接使用numpy数组
                 img_array = img_ref if img_ref.ndim ==3 else img_ref[..., np.newaxis]
             
             # 转换为Tensor并缓存
-            self.cached_img = torch.from_numpy(img_array).permute(2,0,1).float() / 255.0
+            if img_array.ndim == 3:
+                self.cached_img = torch.from_numpy(img_array).permute(2,0,1).float() / 255.0
+            else:
+                self.cached_img = torch.from_numpy(img_array).unsqueeze(0).float() / 255.0
             
             # 计算并缓存梯度图
             self.cached_gradient = self._compute_gradient(self.cached_img)
