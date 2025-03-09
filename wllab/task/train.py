@@ -359,7 +359,9 @@ def train_cf(model, dataloader, num_epochs=50,save_path=None):
             for inputs, labels in dataloader:
                 inputs = inputs.to(device)
                 labels = labels.float().to(device).view(-1,1)
-                
+                if labels.sum().item() == 0:
+                    continue
+
                 outputs = model(inputs)
                 loss = criterion(outputs, labels)
                 

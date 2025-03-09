@@ -1,5 +1,4 @@
 from torch.utils.data import Dataset
-from torch.utils.data import DataLoader
 from PIL import Image
 import os
 import torch
@@ -125,133 +124,39 @@ class PairedDataset(Dataset):
 
 
 class PatchDataset(Dataset):
-    def __init__(self, image_dir, transform=None, max_images=800, 
-                patch_size=32, threshold=0.7, balance_ratio=0.5):
+    def __init__(self, image_dir, transform=None, max_images=800, patch_size=32, threshold=0.7):
         """
-        balance_ratio: 正样本在每张图像中的最小比例 (0.3表示至少30%的样本是正类)
+        image_list: 可以是图像路径列表或已加载的numpy数组列表
+        transform: 数据增强操作
+        max_images: 最大处理的图像数量
         """
+        # 存储原始图像引用或路径
         self.image_dir = image_dir
-        self.image_list = sorted([f for f in os.listdir(image_dir) 
-                                if f.lower().endswith(('png', 'jpg', 'jpeg'))])[:max_images]
+        self.image_list = os.listdir(image_dir)[:max_images]  # 控制最大图像数量
         self.patch_size = patch_size
         self.threshold = threshold
         self.transform = transform
-        self.balance_ratio = balance_ratio
         
-        # 存储优化后的patch位置信息
-        self.patch_positions = []  # (img_idx, y, x, is_positive)
-        self.class_weights = []     # 用于后续加权采样
-        
-        # 第一遍：分析每张图像的样本分布
-        self._precompute_balance()
-        
-        # 第二遍：构建平衡数据集
-        self._build_balanced_set()
-        
+        # 预计算所有可能的patch位置 (image_idx, y, x)
+        self.patch_positions = []
+        for img_idx, img_ref in enumerate(self.image_list):
+            # 动态获取图像尺寸
+            img_path = os.path.join(self.image_dir, self.image_list[img_idx])
+            if isinstance(img_path, str):  # 从文件加载
+                with Image.open(img_path) as img:
+                    h, w = img.size[1], img.size[0]
+            else:  # 如果是numpy数组
+                h, w = img_ref.shape[:2]
+            
+            # 生成网格坐标 (50%重叠)
+            y_coords = range(0, h - self.patch_size + 1, self.patch_size // 2)
+            x_coords = range(0, w - self.patch_size + 1, self.patch_size // 2)
+            self.patch_positions.extend([(img_idx, y, x) for y in y_coords for x in x_coords])
+
         # 缓存系统
-        self.current_img_idx = -1
+        self.current_img_idx = None
         self.cached_img = None
         self.cached_gradient = None
-
-    def _precompute_balance(self):
-        """预计算每张图像的正负样本分布"""
-        self.image_stats = []
-        for img_idx, img_name in enumerate(self.image_list):
-            img_path = os.path.join(self.image_dir, img_name)
-            with Image.open(img_path) as img:
-                w, h = img.size
-                
-            # 生成所有可能位置
-            y_coords = range(0, h - self.patch_size + 1, self.patch_size)
-            x_coords = range(0, w - self.patch_size + 1, self.patch_size)
-            total_patches = len(y_coords) * len(x_coords)
-            
-            # 估计正样本比例（避免全图扫描）
-            # 使用中心区域采样快速评估
-            sample_positions = [
-                (h//2 - self.patch_size, w//2 - self.patch_size),
-                (h//2, w//2),
-                (0, 0),
-                (h - self.patch_size, w - self.patch_size)
-            ]
-            positive_count = sum(self._is_positive(img_path, y, x) 
-                              for y, x in sample_positions if y >=0 and x >=0)
-            
-            estimated_ratio = positive_count / len(sample_positions) if sample_positions else 0
-            self.image_stats.append({
-                'size': (w, h),
-                'estimated_ratio': max(0.1, min(0.9, estimated_ratio))  # 防止极端值
-            })
-
-    def _build_balanced_set(self):
-        """构建平衡的样本集"""
-        for img_idx, img_name in enumerate(self.image_list):
-            img_path = os.path.join(self.image_dir, img_name)
-            w, h = self.image_stats[img_idx]['size']
-            est_ratio = self.image_stats[img_idx]['estimated_ratio']
-            
-            # 动态计算采样步长
-            base_stride = self.patch_size
-            pos_stride = int(base_stride * (1 - est_ratio))
-            neg_stride = int(base_stride * est_ratio)
-            
-            # 生成候选位置
-            pos_samples = []
-            neg_samples = []
-            for y in range(0, h - self.patch_size + 1, base_stride):
-                for x in range(0, w - self.patch_size + 1, base_stride):
-                    if self._is_positive(img_path, y, x):
-                        pos_samples.append((img_idx, y, x))
-                    else:
-                        neg_samples.append((img_idx, y, x))
-            
-            # 动态平衡采样
-            target_pos = int(len(pos_samples + neg_samples) * self.balance_ratio)
-            target_neg = int(target_pos * (1 - self.balance_ratio) / self.balance_ratio)
-            
-            # 保证最小样本量
-            target_pos = max(target_pos, 1)
-            target_neg = max(target_neg, 1)
-            
-            # 随机选择样本
-            selected_pos = random.sample(pos_samples, min(target_pos, len(pos_samples)))
-            selected_neg = random.sample(neg_samples, min(target_neg, len(neg_samples)))
-            
-
-            # 添加到patch位置列表
-            if len(selected_pos) == 0 or len(selected_neg) == 0:
-                continue
-
-            self.patch_positions.extend(selected_pos + selected_neg)
-            self.class_weights.extend([1.0/len(selected_pos)]*len(selected_pos) + 
-                                   [1.0/len(selected_neg)]*len(selected_neg))
-
-    def _is_positive(self, img_path, y, x):
-        """快速判断是否为阳性样本"""
-        try:
-            with Image.open(img_path) as img:
-                patch = img.crop((x, y, x+self.patch_size, y+self.patch_size))
-                patch_tensor = torch.from_numpy(np.array(patch)).permute(2,0,1).float() / 255.0
-                
-                # 快速特征计算
-                if patch_tensor.shape[0] > 1:
-                    gray = patch_tensor.mean(dim=0, keepdim=True)
-                else:
-                    gray = patch_tensor
-                
-                # 近似梯度计算（仅用中心区域）
-                center = gray[:, self.patch_size//4:3*self.patch_size//4, 
-                             self.patch_size//4:3*self.patch_size//4]
-                grad_x = center[:, :, 2:] - center[:, :, :-2]
-                grad_y = center[:, 2:, :] - center[:, :-2, :]
-                grad_magnitude = (grad_x.abs() + grad_y.abs()).mean()
-                
-                # 快速方差计算
-                var = patch_tensor.view(patch_tensor.shape[0], -1).var(dim=1).mean()
-                
-                return (0.6*grad_magnitude + 0.4*var) > self.threshold
-        except:
-            return False
 
     def __len__(self):
         return len(self.patch_positions)
@@ -261,23 +166,41 @@ class PatchDataset(Dataset):
         
         # 按需加载图像 -------------------------------------------------
         if img_idx != self.current_img_idx:
+            img_ref = self.image_list[img_idx]
             img_path = os.path.join(self.image_dir, self.image_list[img_idx])
-            with Image.open(img_path) as img:
-                img_array = np.array(img.convert('RGB'))
+            if isinstance(img_path, str):  # 从文件加载
+                with Image.open(img_path) as img:
+                    img_array = np.array(img.convert('RGB'))  # 强制转RGB
+            else:  # 直接使用numpy数组
+                img_array = img_ref if img_ref.ndim ==3 else img_ref[..., np.newaxis]
             
-            self.cached_img = torch.from_numpy(img_array).permute(2,0,1).float() / 255.0
+            # 转换为Tensor并缓存
+            if img_array.ndim == 3:
+                self.cached_img = torch.from_numpy(img_array).permute(2,0,1).float() / 255.0
+            else:
+                self.cached_img = torch.from_numpy(img_array).unsqueeze(0).float() / 255.0
+            
+            # 计算并缓存梯度图
             self.cached_gradient = self._compute_gradient(self.cached_img)
             self.current_img_idx = img_idx
 
-        # 动态提取patch和标签 ------------------------------------------
-        patch = self.cached_img[:, y:y+self.patch_size, x:x+self.patch_size]
-        grad_patch = self.cached_gradient[y:y+self.patch_size, x:x+self.patch_size]
+        # 动态提取patch ------------------------------------------------
+        patch = self.cached_img[:,
+                  y:y+self.patch_size,
+                  x:x+self.patch_size]
         
-        # 计算精确标签
+        # 提取对应的梯度区域
+        grad_patch = self.cached_gradient[
+                     y:y+self.patch_size,
+                     x:x+self.patch_size]
+        
+        # 计算特征 -----------------------------------------------------
         grad_mean = grad_patch.mean()
-        patch_var = torch.var(patch, dim=(1,2)).mean() + 1e-6
-        label = 1 if (0.6*grad_mean + 0.4*patch_var) > self.threshold else 0
+        patch_var = torch.var(patch, dim=(1,2), unbiased=False).mean() + 1e-6
+        score = 0.6*grad_mean + 0.4*patch_var
+        label = 1 if score > self.threshold else 0
 
+        # 数据增强 -----------------------------------------------------
         if self.transform:
             patch = self.transform(patch)
 
@@ -307,9 +230,4 @@ class PatchDataset(Dataset):
         
         return torch.sqrt(grad_x.pow(2) + grad_y.pow(2)).squeeze()
     
-    def get_balanced_loader(self, batch_size=64):
-        """获取平衡数据的DataLoader"""
-        weights = torch.DoubleTensor(self.class_weights)
-        sampler = torch.utils.data.sampler.WeightedRandomSampler(weights, len(weights))
-        return DataLoader(self, batch_size=batch_size, sampler=sampler, num_workers=4)
 
