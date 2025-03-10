@@ -4,6 +4,7 @@ from torchvision.transforms import ToTensor, Resize, Normalize, RandomCrop, Gray
 from torch.utils.data import DataLoader
 
 from wllab.common.lut import lut_load
+from wllab.network.cf import PatchClassifier
 from wllab.network.lut import SRNet, SPF_LUT_net, MuLUT, LogicLUTNet, TinyLUTNetOpt
 from wllab.network.ed import EnDeNet
 from wllab.network.ht import HalftoneNet
@@ -183,7 +184,53 @@ def EVAL_HT():
     # 开始评估
     evaluate_ht(model, idataloader, save_dir="./results")
 
+
+
+def EVAL_CF():
+    patch_size = 32
+    patch_num = 5
+    # 数据预处理
+    transform = torchvision.transforms.Compose([
+        Resize((patch_size * patch_num, patch_size * patch_num)),
+        ToTensor(),  # 转换为Tensor
+    ])
+    # 数据集
+    idataset = SingleDataset(
+        image_dir="../dataset/DIV2K/LR/X4",
+        transform=transform,
+        max_images=10
+    )
+    idataloader = DataLoader(idataset, batch_size=1, shuffle=False)
+    # 初始化模型
+    model = PatchClassifier(in_channels=3, patch_size=patch_size)
+    # 加载保存的模型权重
+    checkpoint_path = "./checkpoints/classifier.pth"
+    checkpoint = torch.load(checkpoint_path)
+    model.load_state_dict(checkpoint)
+
+    pred = torch.zeros((patch_num, patch_num))
+    for i, org in enumerate(idataloader):
+        res = torch.zeros_like(org)
+        # Divide to patch: (patch_num, patch_num)
+        for m in range(patch_num):
+            for n in range(patch_num):
+                patch = org[:, :, m * patch_size:(m + 1) * patch_size, n * patch_size:(n + 1) * patch_size]
+                out = model(patch)
+                pred[m, n] = out.item()
+                if pred[m, n] != 0:
+                    res[:, :, m * patch_size:(m + 1) * patch_size, n * patch_size:(n + 1) * patch_size] = patch
+        
+        save_image(res[0,:,:,:], f"./test/cf/{i}.png")
+
+
+        
+    
+
+
+
 # 主函数
 if __name__ == "__main__":
-    EVAL_LUT_SR()
+    # EVAL_LUT_SR()
+    EVAL_CF()
+
 
