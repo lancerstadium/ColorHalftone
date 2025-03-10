@@ -188,7 +188,7 @@ def EVAL_HT():
 
 def EVAL_CF():
     patch_size = 32
-    patch_num = 5
+    patch_num = 10
     # 数据预处理
     transform = torchvision.transforms.Compose([
         Resize((patch_size * patch_num, patch_size * patch_num)),
@@ -216,6 +216,7 @@ def EVAL_CF():
             for n in range(patch_num):
                 patch = org[:, :, m * patch_size:(m + 1) * patch_size, n * patch_size:(n + 1) * patch_size]
                 out = model(patch)
+                print(f"Pred: img{i} [{m},{n}] <- {out}")
                 pred[m, n] = out.item()
                 if pred[m, n] != 0:
                     res[:, :, m * patch_size:(m + 1) * patch_size, n * patch_size:(n + 1) * patch_size] = patch
