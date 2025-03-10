@@ -217,7 +217,7 @@ def EVAL_CF():
                 patch = org[:, :, m * patch_size:(m + 1) * patch_size, n * patch_size:(n + 1) * patch_size]
                 out = model(patch)
                 print(f"Pred: img{i} [{m},{n}] <- {out}")
-                pred[m, n] = out.item()
+                pred[m, n] = (out > 0.5).item()
                 if pred[m, n] != 0:
                     res[:, :, m * patch_size:(m + 1) * patch_size, n * patch_size:(n + 1) * patch_size] = patch
         
