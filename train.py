@@ -98,8 +98,8 @@ def TRAIN_CF():
     )
     dataloader = DataLoader(dateset, batch_size=32, shuffle=True, num_workers=4)
     model = PatchClassifier(in_channels=3, patch_size=patch_size)
-    import torch
-    model.load_state_dict(torch.load("./checkpoints/classifier.pth"))
+    # import torch
+    # model.load_state_dict(torch.load("./checkpoints/classifier.pth"))
     train_cf(
         model=model,
         dataloader=dataloader,
