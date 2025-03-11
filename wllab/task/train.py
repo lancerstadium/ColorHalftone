@@ -339,13 +339,13 @@ def finetune_lut_sr(model,
 
 
 # ================= 训练函数（与之前相同接口） =================
-def train_cf(model, dataloader, num_epochs=50,save_path=None):
+def train_cf(model, dataloader, num_epochs=50,save_path=None, lr=0.0001):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
     
     # 损失函数与优化器
     criterion = nn.BCELoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-5)
+    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-5)
     
     # 训练循环
     for epoch in range(num_epochs):
