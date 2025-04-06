@@ -348,6 +348,7 @@ def train_cf(
     save_path=None, 
     loss_fn=nn.BCELoss(),
     lr=0.0001, 
+    weight_decay=1e-5,
     bit_cvt=False, 
     msb_width=8
 ):
@@ -356,7 +357,7 @@ def train_cf(
     
     # 损失函数与优化器
     criterion = loss_fn
-    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-5)
+    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
     
     # 训练循环
     for epoch in range(num_epochs):
@@ -390,7 +391,8 @@ def train_cf(
                 total += labels.size(0)
         
                 pbar.set_postfix({
-                    "loss": f"{running_loss / (pbar.n + 1):.5f}",
+                    "loss": f"{loss.item():.5f}",
+                    "avg": f"{running_loss / (pbar.n + 1):.5f}",
                     "cls": f"{predicted.sum().item()} [{labels.float().mean().item():.2f}]",
                     "acc": f"{correct / total:.5f}"
                 })

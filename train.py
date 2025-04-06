@@ -116,8 +116,9 @@ def TRAIN_CF():
         dataloader=dataloader,
         num_epochs=80,
         save_path="./checkpoints/logic_classifier.pth",
-        loss_fn=loss_fn,
+        # loss_fn=loss_fn,
         lr=0.001,
+        weight_decay=0,
         bit_cvt=True,
         msb_width=6
     )
