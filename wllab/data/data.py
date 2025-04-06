@@ -40,8 +40,11 @@ class PairedDataset(Dataset):
     :param crop_size: 裁剪尺寸(高度，宽度)
     :param upscale_factor: 超分图像的放大因子
     :param is_DIV2K: 是否使用DIV2K数据集
+    :param is_crop: 是否裁剪
+    :param channel_type: 图像通道类型（如RGB, YCbCr, L）
+    :param channel_num: 图像通道数
     '''
-    def __init__(self, image_dir1, image_dir2, transform1=None, transform2=None, max_images=None, crop_size=(256, 256), upscale_factor=1, is_DIV2K=False, is_crop=True):
+    def __init__(self, image_dir1, image_dir2, transform1=None, transform2=None, max_images=None, crop_size=(256, 256), upscale_factor=1, is_DIV2K=False, is_crop=True, channel_type="RGB", channel_num=3):
         """
         :param image_dir1: 图像1的文件夹路径（低分辨率图像）
         :param image_dir2: 图像2的文件夹路径（超分图像）
@@ -61,6 +64,8 @@ class PairedDataset(Dataset):
         self.upscale_factor = upscale_factor  # 超分图像的放大因子
         self.is_DIV2K = is_DIV2K
         self.is_crop = is_crop
+        self.channel_type = channel_type
+        self.channel_num = channel_num
 
     def __len__(self):
         return len(self.image_files)
@@ -74,8 +79,13 @@ class PairedDataset(Dataset):
             img_path2 = os.path.join(self.image_dir2, self.image_files[idx])
         
         # 打开图像
-        image1 = Image.open(img_path1).convert("RGB")
-        image2 = Image.open(img_path2).convert("RGB")
+        image1 = Image.open(img_path1).convert(self.channel_type)
+        image2 = Image.open(img_path2).convert(self.channel_type)
+
+        # 如果图像是<3通道，spilt 取出前 1/2 个通道
+        if self.channel_num < 3:
+            image1 = image1.split()[:self.channel_num]
+            image2 = image2.split()[:self.channel_num]
         
         if self.is_crop:
             # 获取裁剪区域的尺寸

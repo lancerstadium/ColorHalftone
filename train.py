@@ -65,7 +65,9 @@ def TRAIN_SR():
         max_images=800,
         crop_size=(48, 48),
         upscale_factor=4,
-        is_DIV2K=True
+        is_DIV2K=True,
+        channel_type="YCbCr",
+        channel_num=1,
     )
     pdataloader = DataLoader(pdataset, batch_size=4, shuffle=False)
 
@@ -75,7 +77,7 @@ def TRAIN_SR():
     # model = HalftoneNet(in_channels=3, num_classes=64, num_features=128, block_size=3, scale=4)
     # model = LogicLUTNet(kernel_size=3, upscale=4, n_feature=64)
     # model = TinyLUTNetOpt(upscale=4, n_feature=16)
-    model = VarLUTNet(upscale=4, n_feature=16, in_ch=3)
+    model = VarLUTNet(upscale=4, n_feature=16, in_ch=1)
 
     # 开始训练
     train_sr(
@@ -126,8 +128,8 @@ def TRAIN_CF():
 
 # 主函数
 if __name__ == "__main__":
-    TRAIN_CF()
-    # TRAIN_SR()
+    # TRAIN_CF()
+    TRAIN_SR()
     # import torch
     # I = torch.randn(1, 3, 32, 32)
     # model = PatchClassifier(in_channels=3, patch_size=32)

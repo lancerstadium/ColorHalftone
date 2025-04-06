@@ -45,6 +45,7 @@ def evaluate_sr(model,
     load_path='./checkpoints/latest_model.pth', 
     save_dir="./results",
     pad = 1,
+    Ychannel=False,
     is_rev = False
 ):
     """
@@ -106,8 +107,13 @@ def evaluate_sr(model,
                     save_image(ref[idx], ref_path, is_norm=False)
 
                 # 计算 PSNR 和 SSIM
-                ref_y = rgb_to_y(ref_image)
-                out_y = rgb_to_y(out_image)
+                if Ychannel:
+                    ref_y = ref_image
+                    out_y = out_image
+                else:
+                    ref_y = rgb_to_y(ref_image)
+                    out_y = rgb_to_y(out_image)
+                
                 psnr_value = calculate_psnr(ref_y, out_y)
                 ssim_value = calculate_ssim(ref_y, out_y)
 
