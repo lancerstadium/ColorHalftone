@@ -1,6 +1,8 @@
 import torchvision
 from torchvision.transforms import ToTensor, Resize, Normalize, RandomCrop, Grayscale, CenterCrop, Pad, RandomHorizontalFlip, RandomVerticalFlip
 from torch.utils.data import DataLoader
+from wllab.common.util import convert_u8_to_bit
+from wllab.network.logic import get_logic_model
 from wllab.network.cf import PatchClassifier
 from wllab.network.lut import SRNet, SPF_LUT_net, MuLUT, BaseSRNets, DepthwiseLUT, PointwiseONE, PointwiseLUT, LogicLUTNet, TinyLUTNet, TinyLUTNetOpt, VarLUTNet
 from wllab.network.ht import HalftoneNet
@@ -92,20 +94,31 @@ def TRAIN_SR():
 def TRAIN_CF():
     patch_size = 32
     dateset = PatchDataset(
-        image_dir="../dataset/DIV2K/LR/X4",
+        # image_dir="../dataset/DIV2K/LR/X4",
+        image_dir="../half-tone/dataset/VOC2012/train/raw",
         patch_size=patch_size,
-        threshold=0.25
+        threshold=0.2,
+        max_images=800
     )
     dataloader = DataLoader(dateset, batch_size=32, shuffle=True, num_workers=4)
-    model = PatchClassifier(in_channels=3, patch_size=patch_size)
+    # model = PatchClassifier(in_channels=3, patch_size=patch_size)
+    model, loss_fn, optimizator = get_logic_model(
+        grad_factor=1.1,
+        input_ndim=6144,
+        layer_neurons=[8400,4200,2100,1060,540,280,150],
+        nclasses=1,
+        tau=150
+    )
     # import torch
     # model.load_state_dict(torch.load("./checkpoints/classifier.pth"))
     train_cf(
         model=model,
         dataloader=dataloader,
         num_epochs=80,
-        save_path="./checkpoints/classifier.pth",
-        lr=0.0001
+        save_path="./checkpoints/logic_classifier.pth",
+        lr=0.001,
+        bit_cvt=True,
+        msb_width=6
     )
 
 

@@ -10,6 +10,8 @@ import numpy as np
 
 from ..metric.loss import PerceptualLoss, sparsity_loss, color_regularization_loss, adjacent_difference_penalty
 from ..task.eval import evaluate_sr
+from ..common.util import convert_u8_to_bit
+from ..metric.util import rgb_to_y_torch
 
 def train_ht(
     model,
@@ -339,7 +341,7 @@ def finetune_lut_sr(model,
 
 
 # ================= 训练函数（与之前相同接口） =================
-def train_cf(model, dataloader, num_epochs=50,save_path=None, lr=0.0001):
+def train_cf(model, dataloader, num_epochs=50,save_path=None, lr=0.0001, bit_cvt=False, msb_width=8):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
     
@@ -358,6 +360,10 @@ def train_cf(model, dataloader, num_epochs=50,save_path=None, lr=0.0001):
         with tqdm.tqdm(total=len(dataloader), desc=f"Epoch {epoch + 1}/{num_epochs}") as pbar:
             for inputs, labels in dataloader:
                 inputs = inputs.to(device)
+                if bit_cvt:
+                    inputs = rgb_to_y_torch(inputs)
+                    inputs = convert_u8_to_bit(inputs * 255, msb_width=msb_width)
+                    
                 labels = labels.float().to(device).view(-1,1)
                 if labels.sum().item() == 0:
                     continue

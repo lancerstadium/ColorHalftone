@@ -5,13 +5,14 @@ from ..common.logic import *
 
 
 def get_logic_model(
-        grad_factor, 
-        connections, 
-        tau, 
-        architecture, 
-        num_neurons, 
-        num_layers, 
-        learning_rate, 
+        grad_factor=1.1, 
+        connections='unique', 
+        tau=10, 
+        architecture='randomly_connected', 
+        num_neurons=1200, 
+        num_layers=6, 
+        layer_neurons=None,
+        learning_rate=0.01, 
         input_ndim=784, 
         nclasses=10
     ):
@@ -29,15 +30,27 @@ def get_logic_model(
     ####################################################################################################################
 
     if arch == 'randomly_connected':
-        logic_layers.append(torch.nn.Flatten())
-        logic_layers.append(LogicLayer(in_dim=in_dim, out_dim=k, **llkw))
-        for _ in range(l - 1):
-            logic_layers.append(LogicLayer(in_dim=k, out_dim=k, **llkw))
+        if layer_neurons is None:
+            logic_layers.append(torch.nn.Flatten())
+            logic_layers.append(LogicLayer(in_dim=in_dim, out_dim=k, **llkw))
+            for _ in range(l - 1):
+                logic_layers.append(LogicLayer(in_dim=k, out_dim=k, **llkw))
 
-        model = torch.nn.Sequential(
-            *logic_layers,
-            GroupSum(class_count, tau)
-        )
+            model = torch.nn.Sequential(
+                *logic_layers,
+                GroupSum(class_count, tau)
+            )
+        else:
+            nl = len(layer_neurons)
+            logic_layers.append(torch.nn.Flatten())
+            logic_layers.append(LogicLayer(in_dim=in_dim, out_dim=layer_neurons[0], **llkw))
+            for i in range(1, nl):
+                logic_layers.append(LogicLayer(in_dim=layer_neurons[i-1], out_dim=layer_neurons[i], **llkw))
+
+            model = torch.nn.Sequential(
+                *logic_layers,
+                GroupSum(class_count, tau)
+            )
 
     ####################################################################################################################
 
@@ -57,3 +70,5 @@ def get_logic_model(
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
     return model, loss_fn, optimizer
+
+

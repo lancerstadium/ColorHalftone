@@ -37,3 +37,15 @@ def rgb_to_y(x: np.array) -> np.array:
         y: Y 图像，形状为 (H, W)，范围 [0, 1]
     """
     return rgb_to_ycbcr(x, only_y=True)
+
+
+def rgb_to_y_torch(x: torch.Tensor) -> torch.Tensor:
+    device = x.device
+    """
+    将 RGB 图像转换为ycbcr中的y。
+    Args:
+        x: RGB 图像，形状为 (N, 3, H, W)，范围 [0, 1]
+    Returns:
+        y: Y 图像，形状为 (N, 1, H, W)，范围 [0, 1]
+    """
+    return (torch.sum(x * torch.tensor([65.481, 128.553, 24.966])[None, :, None, None].to(device) / 255.0, dim=1, keepdim=True) + 16.0).to(device) / 255.0

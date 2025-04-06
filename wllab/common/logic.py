@@ -216,26 +216,26 @@ class LogicLayer(torch.nn.Module):
             x = GradFactor.apply(x, self.grad_factor)
 
         # if self.implementation == 'cuda':
-        #     if isinstance(x, PackBitsTensor):
-        #         return self.forward_cuda_eval(x)
-        #     return self.forward_cuda(x)
-        # elif self.implementation == 'python':
-        if self.implementation == 'python':
+            # if isinstance(x, PackBitsTensor):
+            #     return self.forward_cuda_eval(x)
+            # return self.forward_cuda(x)
+        # if self.implementation == 'python':
             return self.forward_python(x)
         else:
             raise ValueError(self.implementation)
 
     def forward_python(self, x):
         assert x.shape[-1] == self.in_dim, (x[0].shape[-1], self.in_dim)
+        device = x.device
 
         if self.indices[0].dtype == torch.int64 or self.indices[1].dtype == torch.int64:
-            print(self.indices[0].dtype, self.indices[1].dtype)
+            # print(self.indices[0].dtype, self.indices[1].dtype)
             self.indices = self.indices[0].long(), self.indices[1].long()
-            print(self.indices[0].dtype, self.indices[1].dtype)
+            # print(self.indices[0].dtype, self.indices[1].dtype)
 
         a, b = x[..., self.indices[0]], x[..., self.indices[1]]
         if self.training:
-            x = bin_op_s(a, b, torch.nn.functional.softmax(self.weights, dim=-1))
+            x = bin_op_s(a, b, torch.nn.functional.softmax(self.weights, dim=-1).to(device))
         else:
             weights = torch.nn.functional.one_hot(self.weights.argmax(-1), 16).to(torch.float32)
             x = bin_op_s(a, b, weights)
