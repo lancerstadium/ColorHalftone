@@ -82,10 +82,10 @@ class PairedDataset(Dataset):
         image1 = Image.open(img_path1).convert(self.channel_type)
         image2 = Image.open(img_path2).convert(self.channel_type)
 
-        # 如果 channel_num 是<3通道，取出前 channel_num 个通道，重新合并
-        if self.channel_num < 3 and (self.channel_type == "RGB" or self.channel_type == "YCbCr"):
-            image1 = Image.merge(self.channel_type, [image1.split()[i] for i in range(self.channel_num)])
-            image2 = Image.merge(self.channel_type, [image2.split()[i] for i in range(self.channel_num)])
+        # 如果 channel_num == 1通道，取出前 channel_num 个通道
+        if self.channel_num == 1 and (self.channel_type == "RGB" or self.channel_type == "YCbCr"):
+            image1,_,_ = image1.split()
+            image2,_,_ = image2.split()
         
         if self.is_crop:
             # 获取裁剪区域的尺寸
