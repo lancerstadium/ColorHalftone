@@ -9,6 +9,9 @@ from wllab.network.ht import HalftoneNet
 from wllab.data.data import SingleDataset, PairedDataset, PatchDataset
 from wllab.task.train import train_ht, train_sr, train_cf
 
+
+DATASET_DIR = "../dataset/"
+
 def TRAIN_HT():
     # 数据预处理
     transform1 = torchvision.transforms.Compose([
@@ -20,7 +23,7 @@ def TRAIN_HT():
 
     # 数据集
     idataset = SingleDataset(
-        image_dir="../dataset/DIV2K/LR/X4",
+        image_dir= DATASET_DIR + "DIV2K/LR/X4",
         transform=transform1,
         max_images=800
     )
@@ -58,8 +61,8 @@ def TRAIN_SR():
     ])
 
     pdataset = PairedDataset(
-        image_dir1="../dataset/DIV2K/LR/X4",
-        image_dir2="../dataset/DIV2K/HR",
+        image_dir1= DATASET_DIR + "DIV2K/LR/X4",
+        image_dir2= DATASET_DIR + "DIV2K/HR",
         transform1=transform1,
         transform2=transform2,
         max_images=800,
@@ -95,9 +98,8 @@ def TRAIN_SR():
 
 def TRAIN_CF():
     patch_size = 32
-    dateset = PatchDataset(
-        # image_dir="../dataset/DIV2K/LR/X4",
-        image_dir="../half-tone/dataset/VOC2012/train/raw",
+    dateset = PatchDataset( 
+        image_dir=DATASET_DIR + "DIV2K/LR/X4",
         patch_size=patch_size,
         threshold=0.2,
         max_images=800
