@@ -105,9 +105,9 @@ def TRAIN_CF():
     model, loss_fn, optimizator = get_logic_model(
         grad_factor=1.1,
         input_ndim=6144,
-        layer_neurons=[8400,4200,2100,1060,540,280,150],
+        layer_neurons=[8000,8000,6000,4000,2000,1000],
         nclasses=1,
-        tau=150
+        tau=1000
     )
     # import torch
     # model.load_state_dict(torch.load("./checkpoints/classifier.pth"))
