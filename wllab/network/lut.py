@@ -4719,7 +4719,7 @@ class VarLUTResBlock(nn.Module):
 
 
 class VarLUTNet(nn.Module):
-    def __init__(self, upscale=4,n_feature=16,in_ch=3,round_fn=Round_STE.apply):
+    def __init__(self, upscale=4,n_feature=16,in_ch=3,round_fn=Floor_STE.apply):
         super().__init__()
         self.Round = round_fn
         self.upscale = upscale
