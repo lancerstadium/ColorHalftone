@@ -4539,6 +4539,16 @@ class Floor_STE(Function):
     @staticmethod
     def backward(ctx, grad_outputs):
         return grad_outputs, None
+    
+class Round_STE(Function):
+    @staticmethod
+    def forward(ctx, x):
+        x = torch.round(x)
+        return x
+
+    @staticmethod
+    def backward(ctx, grad_outputs):
+        return grad_outputs, None
 
 class VarDepthWise(torch.nn.Module):
     def __init__(self, out_ch=16, is_pad=False, lsb_width=2,round_fn=Floor_STE.apply):
@@ -4709,16 +4719,16 @@ class VarLUTResBlock(nn.Module):
 
 
 class VarLUTNet(nn.Module):
-    def __init__(self, upscale=4,n_feature=16,in_ch=3,round_fn=Floor_STE.apply):
+    def __init__(self, upscale=4,n_feature=16,in_ch=3,round_fn=Round_STE.apply):
         super().__init__()
         self.Round = round_fn
         self.upscale = upscale
         self.shared_pw = VarPointwise(upscale=upscale,out_ch=in_ch * upscale * upscale,n_feature=n_feature,round_fn=round_fn)
-        self.head = VarLUTResBlock(upscale=4, in_ch = in_ch ,out_ch= in_ch * upscale * upscale,n_feature=n_feature)
-        self.blk1 = VarLUTResBlock(upscale=1, out_ch= in_ch * upscale * upscale,n_feature=n_feature,pw2=self.shared_pw)
-        self.blk2 = VarLUTResBlock(upscale=1, out_ch= in_ch * upscale * upscale,n_feature=n_feature,pw2=self.shared_pw)
-        self.blk3 = VarLUTResBlock(upscale=1, out_ch= in_ch * upscale * upscale,n_feature=n_feature,pw2=self.shared_pw)
-        self.blk4 = VarLUTResBlock(upscale=1, out_ch= in_ch * upscale * upscale,n_feature=n_feature,pw2=self.shared_pw)
+        self.head = VarLUTResBlock(upscale=4, round_fn=round_fn, in_ch = in_ch ,out_ch= in_ch * upscale * upscale,n_feature=n_feature)
+        self.blk1 = VarLUTResBlock(upscale=1, round_fn=round_fn, out_ch= in_ch * upscale * upscale,n_feature=n_feature,pw2=self.shared_pw)
+        self.blk2 = VarLUTResBlock(upscale=1, round_fn=round_fn, out_ch= in_ch * upscale * upscale,n_feature=n_feature,pw2=self.shared_pw)
+        self.blk3 = VarLUTResBlock(upscale=1, round_fn=round_fn, out_ch= in_ch * upscale * upscale,n_feature=n_feature,pw2=self.shared_pw)
+        self.blk4 = VarLUTResBlock(upscale=1, round_fn=round_fn, out_ch= in_ch * upscale * upscale,n_feature=n_feature,pw2=self.shared_pw)
         
 
     def forward(self, x):
